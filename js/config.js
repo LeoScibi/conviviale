@@ -37,11 +37,19 @@ export const SCHEMA = {
       'VAT_RATE', 'TARGET_GP%', 'METHOD'],
     numbers: ['YIELD_QTY', 'PORTIONS', 'SELL_PRICE', 'VAT_RATE', 'TARGET_GP%'],
   },
+  // LINE_ID and SORT let a single line be edited, reordered or removed in place.
   RECIPE_LINES: {
-    headers: ['RECIPE_ID', 'ITEM_TYPE', 'ITEM_ID', 'QTY', 'UNIT'],
-    numbers: ['QTY'],
+    idField: 'LINE_ID',
+    idPrefix: 'RL',
+    headers: ['RECIPE_ID', 'ITEM_TYPE', 'ITEM_ID', 'QTY', 'UNIT', 'LINE_ID', 'SORT'],
+    numbers: ['QTY', 'SORT'],
   },
 };
+
+export const RECIPE_TYPES = [['dish', 'Dish'], ['drink', 'Drink'], ['sub', 'Sub-recipe']];
+
+// Used when a recipe leaves these blank.
+export const RECIPE_DEFAULTS = { VAT_RATE: 20, TARGET_GP: 70 };
 
 // UK FIR 14 major allergens.
 export const ALLERGENS = ['Celery', 'Gluten', 'Crustaceans', 'Eggs', 'Fish', 'Lupin', 'Milk',

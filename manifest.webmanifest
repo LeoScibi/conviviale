@@ -1,6 +1,6 @@
 {
-  "name": "Conviviale Kitchen",
-  "short_name": "Kitchen",
+  "name": "Conviviale Ops",
+  "short_name": "Conviviale Ops",
   "description": "Food cost and recipe management for Conviviale.",
   "start_url": "./",
   "scope": "./",

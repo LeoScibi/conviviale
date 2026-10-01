@@ -31,14 +31,50 @@ export function option(value, label, selected) {
   return `<option value="${esc(value)}"${String(value) === String(selected) ? ' selected' : ''}>${esc(label)}</option>`;
 }
 
-export function toast(message, type = 'ok') {
-  const box = document.getElementById('toasts');
+/**
+ * Keep the toast stack in the top-most open dialog: a modal dialog sits in the browser's
+ * top layer, so anything outside it (including fixed toasts) would be hidden behind it.
+ */
+export function parkToasts() {
+  let box = document.getElementById('toasts');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'toasts';
+    box.className = 'toasts';
+    box.setAttribute('aria-live', 'polite');
+  }
+  const top = [...document.querySelectorAll('dialog[open]')].pop();
+  const home = top || document.body;
+  if (box.parentElement !== home) home.append(box);
+  return box;
+}
+
+export function toast(message, type = 'ok', action = null) {
+  const box = parkToasts();
   const el = document.createElement('div');
   el.className = `toast ${type}`;
   el.setAttribute('role', type === 'error' ? 'alert' : 'status');
   el.textContent = message;
+  if (action) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'toast-action';
+    btn.textContent = action.label;
+    btn.addEventListener('click', () => { el.remove(); action.onClick(); });
+    el.append(btn);
+  }
   box.append(el);
   setTimeout(() => el.remove(), type === 'error' ? 8000 : 3500);
+}
+
+/** Show an error from a failed action; offers Reconnect when the Google session has expired. */
+export function reportError(err) {
+  console.error(err);
+  if (err instanceof AuthError && reconnect) {
+    toast(err.message, 'error', { label: 'Reconnect', onClick: () => reconnect() });
+  } else {
+    toast(err?.message || String(err), 'error');
+  }
 }
 
 let uid = 0;
@@ -129,7 +165,7 @@ export function formDialog({ title, fields, values = {}, submitLabel = 'Save', e
 
   dlg.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => { if (!busy) dlg.close(); }));
   dlg.addEventListener('cancel', e => { if (busy) e.preventDefault(); });
-  dlg.addEventListener('close', () => dlg.remove());
+  dlg.addEventListener('close', () => { parkToasts(); dlg.remove(); });
 
   const changed = () => onChange?.(readForm(form, fields), dlg);
   form.addEventListener('input', changed);
@@ -170,6 +206,7 @@ export function formDialog({ title, fields, values = {}, submitLabel = 'Save', e
   });
 
   dlg.showModal();
+  parkToasts();
   changed();
   form.querySelector('input:not([type=checkbox]), select, textarea')?.focus();
   return dlg;

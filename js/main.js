@@ -5,8 +5,9 @@ import * as store from './store.js';
 import { toast, setReconnectHandler } from './ui.js';
 import * as ingredients from './views/ingredients.js';
 import * as suppliers from './views/suppliers.js';
+import * as recipes from './views/recipes.js';
 
-const ROUTES = { ingredients, suppliers };
+const ROUTES = { ingredients, suppliers, recipes };
 const DEFAULT_ROUTE = 'ingredients';
 
 const $ = sel => document.querySelector(sel);
@@ -30,15 +31,21 @@ function showFatal(message) {
   show('#fatal');
 }
 
+let currentRoute = null;
+
+// Hash routes look like #/recipes or #/recipes/REC-0001 (the second part opens a record).
 function route() {
-  const name = location.hash.replace(/^#\/?/, '') || DEFAULT_ROUTE;
-  const view = ROUTES[name];
+  const [name = DEFAULT_ROUTE, param] = location.hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent);
+  const view = ROUTES[name || DEFAULT_ROUTE];
   if (!view) { location.hash = `#/${DEFAULT_ROUTE}`; return; }
+  // Leaving a section closes anything it had open.
+  if (currentRoute && currentRoute !== name) document.querySelectorAll('dialog[open]').forEach(d => d.close());
+  currentRoute = name || DEFAULT_ROUTE;
   document.querySelectorAll('.nav a[data-route]').forEach(a => {
-    a.classList.toggle('active', a.dataset.route === name);
-    if (a.dataset.route === name) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    a.classList.toggle('active', a.dataset.route === currentRoute);
+    if (a.dataset.route === currentRoute) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
-  view.render($('#view'));
+  view.render($('#view'), param);
 }
 
 async function start() {

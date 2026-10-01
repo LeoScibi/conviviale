@@ -41,7 +41,7 @@ async function request(path, { method = 'GET', query, body } = {}) {
     }
     let msg = res.statusText;
     try { msg = (await res.json()).error.message; } catch { /* keep statusText */ }
-    if (res.status === 403) msg = `No permission for the Conviviale Kitchen spreadsheet. Ask for edit access. (${msg})`;
+    if (res.status === 403) msg = `No permission for the Conviviale Ops spreadsheet. Ask for edit access. (${msg})`;
     if (res.status === 404) msg = 'Spreadsheet not found. Check SPREADSHEET_ID in js/config.js.';
     throw new SheetsError(res.status, msg);
   }
@@ -152,18 +152,55 @@ export async function appendRows(tab, headers, records) {
 }
 
 /**
- * Update the row whose `idField` equals `id`. Re-reads the tab first so we locate
- * the row by ID even if rows were inserted or sorted in the sheet since we loaded it.
+ * Update rows by ID: `patches` is [{ id, patch }]. Re-reads the tab first so rows are located
+ * by ID even if they were inserted or sorted in the sheet since we loaded it. One write request.
  */
-export async function updateRowById(tab, idField, id, patch) {
+export async function updateRowsById(tab, idField, patches) {
   const { headers, rows } = await readTable(tab);
-  const row = rows.find(r => String(r[idField]) === String(id));
-  if (!row) throw new SheetsError(404, `${id} was not found in ${tab}. It may have been deleted in the sheet.`);
-  const values = toRow(headers, patch, row._raw);
-  const range = `${q(tab)}!A${row._row}:${colLetter(headers.length)}${row._row}`;
-  return request(`/values/${encodeURIComponent(range)}`, {
-    method: 'PUT',
-    query: { valueInputOption: 'RAW' },
-    body: { values: [values] },
+  const data = patches.map(({ id, patch }) => {
+    const row = rows.find(r => String(r[idField]) === String(id));
+    if (!row) throw new SheetsError(404, `${id} was not found in ${tab}. It may have been deleted in the sheet.`);
+    return {
+      range: `${q(tab)}!A${row._row}:${colLetter(headers.length)}${row._row}`,
+      values: [toRow(headers, patch, row._raw)],
+    };
   });
+  if (!data.length) return null;
+  return request('/values:batchUpdate', { method: 'POST', body: { valueInputOption: 'RAW', data } });
+}
+
+export async function updateRowById(tab, idField, id, patch) {
+  return updateRowsById(tab, idField, [{ id, patch }]);
+}
+
+let sheetIds = null;
+
+async function sheetIdOf(tab) {
+  if (!sheetIds || !(tab in sheetIds)) {
+    const meta = await request('', { query: { fields: 'sheets.properties(sheetId,title)' } });
+    sheetIds = Object.fromEntries(meta.sheets.map(s => [s.properties.title, s.properties.sheetId]));
+  }
+  if (!(tab in sheetIds)) throw new SheetsError(404, `The ${tab} tab is missing from the spreadsheet.`);
+  return sheetIds[tab];
+}
+
+/**
+ * Delete rows by ID across one or more tabs in a single, all-or-nothing request.
+ * `specs` is [{ tab, idField, ids }].
+ */
+export async function deleteRowsById(specs) {
+  const tables = await readTables(specs.map(s => s.tab));
+  const requests = [];
+  for (const { tab, idField, ids } of specs) {
+    const want = new Set(ids.map(String));
+    const sheetId = await sheetIdOf(tab);
+    // Bottom-up, so earlier deletions don't shift the rows still to delete.
+    tables[tab].rows
+      .filter(r => want.has(String(r[idField])))
+      .map(r => r._row - 1)
+      .sort((a, b) => b - a)
+      .forEach(i => requests.push({ deleteDimension: { range: { sheetId, dimension: 'ROWS', startIndex: i, endIndex: i + 1 } } }));
+  }
+  if (!requests.length) return null;
+  return request(':batchUpdate', { method: 'POST', body: { requests } });
 }

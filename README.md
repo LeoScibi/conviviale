@@ -1,4 +1,4 @@
-# Conviviale Kitchen
+# Conviviale Ops
 
 Food cost, recipe management and (later) inventory for Conviviale wine bar.
 Static single-page app: plain HTML/CSS/JS, no build step, served from the repo root on GitHub Pages.
@@ -39,6 +39,9 @@ Then open http://localhost:8000.
 | `js/sheets.js` | Sheets API wrapper: schema setup, read tables by header, append, update row by ID |
 | `js/store.js` | In-memory cache, type coercion, ID generation (`SUP-0001`, `ING-0001`, `REC-0001`) |
 | `js/costing.js` | Derived costs: unit cost, usable cost after yield, unit conversion |
+| `js/units.js` | Recipe measurement families (weight / volume / each) and conversions |
+| `js/recipe-cost.js` | Live recipe costing: line costs, sub-recipes, cost per portion, GP, allergen roll-up, loop guard |
+| `js/recipe-paste.js` | Paste-a-recipe parser (ported from Carisma Ops) |
 | `js/ui.js` | Escaping, formatting, toasts, form dialog |
 | `js/views/*.js` | One module per screen |
 | `js/icons.js` | Line icons |
@@ -64,10 +67,19 @@ full-screen forms. It can be added to the home screen and opens like an app.
 - Pack prices are ex VAT. Every price change (and each new ingredient) appends a row to
   PRICE_HISTORY with today's date and an optional invoice reference.
 - Ingredients are retired by unticking ACTIVE rather than deleted, so recipes keep working.
+- RECIPE_LINES has two extra columns, `LINE_ID` and `SORT`, so a single line can be edited,
+  reordered or removed in place. Lines added straight into the sheet without a LINE_ID still
+  cost correctly but can only be edited in the sheet.
+- Recipe costs are never stored. Cost per portion, GP and allergens are recalculated from the
+  current ingredient prices every time, through any depth of sub-recipes.
+- A recipe line's ITEM_TYPE is `ING` or `SUB`. Sub-recipes can be used by weight/volume (needs a
+  batch yield) or by `portion` (needs PORTIONS). A sub-recipe that would loop back into the
+  recipe can't be added.
+- GP% is on the net price: SELL_PRICE is inc VAT, VAT_RATE defaults to 20% and TARGET_GP% to 70%.
 
 ## Roadmap
 
 - **Phase 1 (done):** auth, Sheets wrapper, tab setup, suppliers and ingredients (list, search, add, edit).
-- **Phase 2:** recipe builder: cost per portion, GP% vs target, allergens rolled up through sub-recipes.
-  Wine by the glass is a recipe using a bottle ingredient (e.g. 175 ml of a 750 ml bottle).
+- **Phase 2 (done):** recipe builder: cost per portion, GP% vs target, allergens rolled up through sub-recipes,
+  scaling, paste importer. Wine by the glass is a drink recipe using a bottle ingredient (e.g. 175 ml of a 750 ml bottle).
 - **Phase 3:** inventory: stock counts, deliveries, waste.

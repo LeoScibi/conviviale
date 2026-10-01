@@ -89,7 +89,8 @@ function renderList() {
       <button class="card-hit" data-id="${esc(i.ING_ID)}" aria-label="Edit ${esc(i.NAME)}"></button>
       <div class="card-top">
         <div>
-          <div class="card-name">${esc(i.NAME)}${i.ACTIVE ? '' : ' <span class="tag">Inactive</span>'}</div>
+          <div class="card-name">${esc(i.NAME)}${i.ACTIVE ? '' : ' <span class="tag">Inactive</span>'}${
+            unitCost(i) == null ? ' <span class="tag allergen">Needs price</span>' : ''}</div>
           <div class="card-sub">${sub}</div>
         </div>
         <div class="card-figure"><strong>${formatUnitCost(usableUnitCost(i), i.PACK_UNIT)}</strong><span>usable cost</span></div>
@@ -119,7 +120,8 @@ function historyHtml(ingId) {
     </section>`;
 }
 
-export function openForm(ing) {
+/** `prefill` seeds a new ingredient's fields; `onSaved(id)` runs after a successful save. */
+export function openForm(ing, { prefill = {}, onSaved } = {}) {
   const isNew = !ing;
   const sups = store.rows('SUPPLIERS').slice().sort(byName);
   const supOptions = [['', '— None —'], ...sups.map(s => [s.SUPPLIER_ID, s.NAME])];
@@ -150,7 +152,7 @@ export function openForm(ing) {
   formDialog({
     title: isNew ? 'Add ingredient' : `Edit ${ing.NAME}`,
     fields,
-    values: ing || { ACTIVE: true, 'YIELD_%': 100, PACK_UNIT: 'g' },
+    values: ing || { ACTIVE: true, 'YIELD_%': 100, PACK_UNIT: 'g', ...prefill },
     submitLabel: isNew ? 'Add ingredient' : 'Save changes',
     extraHtml: `<p class="cost-preview" data-preview aria-live="polite"></p>${isNew ? '' : historyHtml(ing.ING_ID)}`,
     onChange: (d, dlg) => {
@@ -196,6 +198,7 @@ export function openForm(ing) {
       }
       toast(isNew ? `Added ${rec.NAME}` : `Saved ${rec.NAME}`);
       if (root?.isConnected) renderList();
+      onSaved?.(id);
     },
   });
 }

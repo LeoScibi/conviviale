@@ -67,21 +67,41 @@ function nextId(tab) {
   return `${idPrefix}-${String(max + 1).padStart(4, '0')}`;
 }
 
+/** Append new records; returns their generated IDs in order. */
+export async function createMany(tab, records) {
+  // Re-read first so new IDs account for rows other users added since we loaded.
+  await refresh(tab);
+  const { idField, idPrefix } = SCHEMA[tab];
+  const start = Number(nextId(tab).slice(idPrefix.length + 1));
+  const ids = records.map((_, i) => `${idPrefix}-${String(start + i).padStart(4, '0')}`);
+  await sheets.appendRows(tab, tables[tab].headers, records.map((r, i) => ({ ...coerceOut(tab, r), [idField]: ids[i] })));
+  await refresh(tab);
+  return ids;
+}
+
 /** Append a new record; returns its generated ID. */
 export async function create(tab, record) {
-  // Re-read first so the next ID accounts for rows other users added since we loaded.
-  await refresh(tab);
+  return (await createMany(tab, [record]))[0];
+}
+
+/** `changes` is [{ id, record }]; only the fields in each record are written. */
+export async function updateMany(tab, changes) {
   const { idField } = SCHEMA[tab];
-  const id = nextId(tab);
-  await sheets.appendRows(tab, tables[tab].headers, [{ ...coerceOut(tab, record), [idField]: id }]);
+  await sheets.updateRowsById(tab, idField, changes.map(({ id, record }) => ({
+    id, patch: { ...coerceOut(tab, record), [idField]: id },
+  })));
   await refresh(tab);
-  return id;
 }
 
 export async function update(tab, id, record) {
-  const { idField } = SCHEMA[tab];
-  await sheets.updateRowById(tab, idField, id, { ...coerceOut(tab, record), [idField]: id });
-  await refresh(tab);
+  await updateMany(tab, [{ id, record }]);
+}
+
+/** Delete records from one or more tabs in one all-or-nothing request. `spec` is { TAB: [ids] }. */
+export async function remove(spec) {
+  const tabs = Object.keys(spec);
+  await sheets.deleteRowsById(tabs.map(tab => ({ tab, idField: SCHEMA[tab].idField, ids: spec[tab] })));
+  await refresh(...tabs);
 }
 
 export async function logPrice(ingId, packPrice, invoiceRef = '') {
