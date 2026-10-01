@@ -1,3 +1,62 @@
-   <!doctype html>
-   <title>Conviviale Kitchen</title>
-   <h1>Conviviale Kitchen — coming soon</h1>
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Conviviale Kitchen</title>
+  <meta name="theme-color" content="#6e1a2f">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%236e1a2f'/><text x='16' y='22' font-family='Georgia,serif' font-size='17' fill='white' text-anchor='middle'>CK</text></svg>">
+  <link rel="stylesheet" href="css/app.css">
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <div id="loading" class="screen center">
+    <div class="spinner" aria-hidden="true"></div>
+    <p id="loading-msg">Loading…</p>
+  </div>
+
+  <div id="signin" class="screen center" hidden>
+    <div class="card signin-card">
+      <div class="brand-mark">CK</div>
+      <h1>Conviviale Kitchen</h1>
+      <p class="muted">Food cost and recipe management for Conviviale.</p>
+      <p id="signin-msg" class="form-error" role="alert" hidden></p>
+      <button id="signin-btn" class="btn primary lg">Sign in with Google</button>
+      <p class="muted small">Use your @conviviale.co.uk account.</p>
+    </div>
+  </div>
+
+  <div id="fatal" class="screen center" hidden>
+    <div class="card signin-card">
+      <h1>Something went wrong</h1>
+      <p id="fatal-msg" class="form-error" role="alert"></p>
+      <button id="retry-btn" class="btn primary">Try again</button>
+    </div>
+  </div>
+
+  <div id="app" hidden>
+    <header class="topbar">
+      <a class="brand" href="#/ingredients"><span class="brand-mark sm">CK</span><span>Conviviale Kitchen</span></a>
+      <nav class="nav" aria-label="Main">
+        <a href="#/ingredients" data-route="ingredients">Ingredients</a>
+        <a href="#/suppliers" data-route="suppliers">Suppliers</a>
+        <span class="soon" title="Coming in phase 2">Recipes</span>
+        <span class="soon" title="Coming in phase 3">Inventory</span>
+      </nav>
+      <div class="user">
+        <a id="sheet-link" class="btn ghost sm" target="_blank" rel="noopener">Open sheet</a>
+        <button id="refresh-btn" class="btn ghost sm" title="Reload data from the spreadsheet">Refresh</button>
+        <span id="user-email" class="muted small"></span>
+        <button id="signout-btn" class="btn ghost sm">Sign out</button>
+      </div>
+    </header>
+    <div id="banner" class="banner" role="alert" hidden>
+      Your Google session has expired. Nothing you've typed is lost.
+      <button id="reconnect-btn" class="btn primary sm">Reconnect</button>
+    </div>
+    <main id="view"></main>
+  </div>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+</body>
+</html>
