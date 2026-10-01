@@ -2,9 +2,10 @@ import * as store from '../store.js';
 import { ORDER_DAYS } from '../config.js';
 import { icons } from '../icons.js';
 import { esc, money, formDialog, toast, reportError, byName, sameName, matches, splitList, parkToasts } from '../ui.js';
-import { PACK_UNIT_OPTIONS, normalisePack, ingredientUnit, priceUnitCost, formatUnitCost } from '../costing.js';
-import { matchIngredient, normName } from '../recipe-paste.js';
-import { parsePriceList } from '../pricelist-paste.js';
+import { PACK_UNIT_OPTIONS, normalisePack, ingredientUnit, priceUnitCost, pricesFor, formatUnitCost } from '../costing.js';
+import { normName } from '../recipe-paste.js';
+import { parsePriceList, matchProduct } from '../pricelist-paste.js';
+import { pdfToLines } from '../pdf-text.js';
 import { openPriceForm, priceRowHtml } from './prices.js';
 
 const state = { q: '' };
@@ -267,12 +268,19 @@ function ensurePasteDialog() {
         <button type="button" class="icon-btn" data-act="close" aria-label="Close">&times;</button>
       </header>
       <div class="modal-body">
-        <p class="muted small">Copy rows from their spreadsheet, email or PDF and paste them here, one product per line, e.g. <i>BUR125 Burrata 8 x 125g £18.00</i>. Items already on this list (same code or ingredient and pack) get their price updated; others are added, and anything not found becomes a new ingredient.</p>
+        <p class="muted small">Upload their PDF price list, or paste rows from a spreadsheet or email (one product per line, e.g. <i>BUR125 Burrata 8 x 125g £18.00</i>). Products that match your ingredients, or are already on this supplier's list, are ticked; prices already listed are updated. Everything else stays unticked unless you choose it.</p>
+        <label class="btn primary block upload-btn">
+          <input type="file" accept="application/pdf,.pdf" data-pp-file hidden>
+          Upload PDF price list
+        </label>
+        <p class="or-divider"><span>or paste</span></p>
         <textarea data-pp-text rows="7" placeholder="${esc('BUR125\tBurrata\t8 x 125g\t£18.00\nMON75 Montepulciano d’Abruzzo 75cl 8.40')}"></textarea>
         <input type="text" data-pp-ref placeholder="Invoice or price list ref (optional)" aria-label="Invoice or price list reference">
         <button type="button" class="btn block" data-act="parse">Read the list</button>
         <p class="small muted paste-summary" data-pp-summary></p>
+        <label class="toggle-chip pp-filter" hidden><input type="checkbox" data-pp-mine checked> Only products I use</label>
         <div class="paste-rows" data-pp-rows></div>
+        <p class="muted small pp-hidden" data-pp-hidden></p>
         <datalist id="pp-ingredients"></datalist>
       </div>
       <footer class="modal-foot">
@@ -290,6 +298,22 @@ function ensurePasteDialog() {
   });
   pasteDlg.addEventListener('input', onRowEdit);
   pasteDlg.addEventListener('change', onRowEdit);
+  pasteDlg.querySelector('[data-pp-mine]').addEventListener('change', renderRows);
+  pasteDlg.querySelector('[data-pp-file]').addEventListener('change', async e => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    const summary = pasteDlg.querySelector('[data-pp-summary]');
+    summary.textContent = `Reading ${file.name}…`;
+    try {
+      const lines = await pdfToLines(file);
+      pasteDlg.querySelector('[data-pp-text]').value = lines.join('\n');
+      readList();
+    } catch (err) {
+      summary.textContent = '';
+      reportError(new Error(`Couldn't read that PDF (${err.message}). Try copying the rows from it and pasting them instead.`));
+    }
+  });
 }
 
 function confirmDiscard() {
@@ -324,31 +348,57 @@ function resolve(r) {
   const target = r.ingId ? store.byId('INGREDIENTS', r.ingId) : null;
   const measured = target ? ingredientUnit(target) : '';
   r.note = '';
+  r.switchUnit = false;
   if (r.price == null) r.note = 'No price found on this line.';
   else if (!(Number(r.size) > 0)) r.note = 'No pack size found. Enter one.';
-  else if (measured && measured !== r.unit) r.note = `${target.NAME} is measured in ${measured}; this pack is in ${r.unit}.`;
+  else if (measured && measured !== r.unit) {
+    // An ingredient nothing depends on yet can simply take the supplier's measure (basil by the bunch).
+    const inUse = pricesFor(target.ING_ID).length
+      || store.rows('RECIPE_LINES').some(l => String(l.ITEM_TYPE).toUpperCase() === 'ING' && String(l.ITEM_ID) === String(target.ING_ID));
+    if (inUse) r.note = `${target.NAME} is measured in ${measured}; this pack is in ${r.unit}.`;
+    else r.switchUnit = true;
+  }
 }
+
+// Wholesale lists shout: "TOMATO DATTERINO" → "Tomato datterino" for new ingredient names.
+const tidyName = n => (n === n.toUpperCase() ? n.charAt(0) + n.slice(1).toLowerCase() : n);
 
 function readList() {
   const text = pasteDlg.querySelector('[data-pp-text]').value;
-  if (!text.trim()) { toast('Paste a price list first.', 'error'); return; }
+  if (!text.trim()) { toast('Upload a PDF or paste a price list first.', 'error'); return; }
   const active = store.rows('INGREDIENTS').filter(i => i.ACTIVE);
   const own = supplierPrices(pasteSupplier);
   rows = parsePriceList(text).map(p => {
     // Their own description on an existing entry is the strongest match, then our ingredient names.
     const byDesc = own.find(x => x.PRODUCT_NAME && normName(x.PRODUCT_NAME) === normName(p.name));
-    const match = byDesc ? store.byId('INGREDIENTS', byDesc.ING_ID) : matchIngredient(p.name, active);
-    const r = {
-      raw: p.raw, code: p.code, desc: p.name, name: match?.NAME ?? p.name, ingId: match?.ING_ID ?? null,
-      size: p.pack?.size ?? '', unit: p.pack?.unit ?? (match ? ingredientUnit(match) || 'g' : 'g'),
-      price: p.price, include: p.price != null,
+    const m = byDesc ? { ing: store.byId('INGREDIENTS', byDesc.ING_ID), score: Infinity } : matchProduct(p.name, p.section, active);
+    return {
+      raw: p.raw, code: p.code, desc: p.name, name: m?.ing?.NAME ?? tidyName(p.name), ingId: m?.ing?.ING_ID ?? null,
+      score: m?.score ?? 0, size: p.pack?.size ?? '', unit: p.pack?.unit ?? (m?.ing ? ingredientUnit(m.ing) || 'g' : 'g'),
+      price: p.price,
     };
-    resolve(r);
-    // Lines that can't be saved as they stand (notes, delivery charges…) start unticked.
-    if (r.note) r.include = false;
-    return r;
   });
+
+  // Each ingredient links to its best-matching product only, so "AUBERGINE LONG" and
+  // "AUBERGINE PERLINA" don't all claim Aubergines; other pack sizes of that same product
+  // ("CHICKPEAS 400G" and "CHICKPEAS 2.5KG") are kept. Already-listed products keep theirs.
+  const best = new Map();
+  for (const r of rows) if (r.ingId && r.score > (best.get(r.ingId)?.score ?? -1)) best.set(r.ingId, r);
+  for (const r of rows) {
+    const winner = r.ingId && best.get(r.ingId);
+    if (winner && winner !== r && r.score !== Infinity && normName(winner.desc) !== normName(r.desc)) {
+      r.ingId = null;
+      r.name = tidyName(r.desc);
+    }
+    resolve(r);
+    // Tick what's yours (matched or already listed) and saveable; leave the rest of the catalogue alone.
+    r.mine = !!(r.ingId || r.existing);
+    r.include = r.mine && !r.note;
+  }
   if (!rows.length) toast('No products found. Each line needs a name and a price.', 'error');
+  const filter = pasteDlg.querySelector('.pp-filter');
+  filter.hidden = rows.length < 25;
+  pasteDlg.querySelector('[data-pp-mine]').checked = rows.length >= 25;
   renderRows();
 }
 
@@ -358,8 +408,12 @@ function rowStatus(r) {
     if (r.price != null && was !== r.price) return `<small class="match-ok">Updates ${money(was)} → ${money(r.price)}</small>`;
     return '<small class="match-ok">Already listed, price unchanged</small>';
   }
-  if (r.ingId) return '<small class="match-ok">✓ Adds to this price list</small>';
-  return '<small class="match-new">+ New ingredient</small>';
+  if (r.ingId) {
+    return `<small class="match-ok">✓ Adds to this price list${r.switchUnit
+      ? ` · ${esc(store.byId('INGREDIENTS', r.ingId)?.NAME ?? '')} will be measured in ${r.unit === 'each' ? 'units' : r.unit}` : ''}</small>`;
+  }
+  return r.include ? '<small class="match-new">+ Will be added as a new ingredient</small>'
+    : '<small class="muted">Not one of your ingredients. Tick to add it, or type one of yours.</small>';
 }
 
 function rowHtml(r, i) {
@@ -381,7 +435,13 @@ function rowHtml(r, i) {
 }
 
 function renderRows() {
-  pasteDlg.querySelector('[data-pp-rows]').innerHTML = rows.map(rowHtml).join('');
+  const onlyMine = !pasteDlg.querySelector('.pp-filter').hidden && pasteDlg.querySelector('[data-pp-mine]').checked;
+  const shown = rows.map((r, i) => [r, i]).filter(([r]) => !onlyMine || r.mine || r.include);
+  pasteDlg.querySelector('[data-pp-rows]').innerHTML = shown.map(([r, i]) => rowHtml(r, i)).join('');
+  const hidden = rows.length - shown.length;
+  pasteDlg.querySelector('[data-pp-hidden]').textContent = hidden
+    ? `${hidden} other product${hidden === 1 ? '' : 's'} on this list ${hidden === 1 ? 'isn\u2019t' : 'aren\u2019t'} among your ingredients. Untick “Only products I use” to see ${hidden === 1 ? 'it' : 'them'}.`
+    : '';
   const chosen = rows.filter(r => r.include);
   const updates = chosen.filter(r => r.existing).length;
   const fresh = new Set(chosen.filter(r => !r.ingId).map(r => normName(r.name))).size;
@@ -405,13 +465,14 @@ function onRowEdit(e) {
     if (f === 'price') r.price = el.value === '' ? null : Number(el.value);
     return;
   }
-  if (f === 'include') r.include = el.checked;
+  if (f === 'include') { r.include = el.checked; r.mine ||= el.checked; }
   if (f === 'unit') r.unit = el.value;
   if (f === 'name') {
     const typed = el.value.trim();
     const exact = store.rows('INGREDIENTS').find(i => normName(i.NAME) === normName(typed));
     r.ingId = exact?.ING_ID ?? null;
     r.name = exact?.NAME ?? typed;
+    r.mine = true;
     if (exact && ingredientUnit(exact)) r.unit = ingredientUnit(exact);
   }
   r.existing = null;
@@ -433,13 +494,17 @@ async function savePasted() {
     const fresh = new Map();
     for (const r of chosen.filter(x => !x.ingId)) {
       const key = normName(r.name);
-      if (!fresh.has(key)) fresh.set(key, { NAME: r.name.charAt(0).toUpperCase() + r.name.slice(1), UNIT: r.unit, 'YIELD_%': 100, ACTIVE: true });
+      if (!fresh.has(key)) fresh.set(key, { NAME: tidyName(r.name).charAt(0).toUpperCase() + tidyName(r.name).slice(1), UNIT: r.unit, 'YIELD_%': 100, ACTIVE: true });
     }
     if (fresh.size) {
       const ids = await store.createMany('INGREDIENTS', [...fresh.values()]);
       [...fresh.keys()].forEach((k, i) => { fresh.get(k).id = ids[i]; });
     }
     const ingOf = r => r.ingId || fresh.get(normName(r.name)).id;
+
+    // Unused ingredients take the supplier's measure (decided in resolve()).
+    const switches = new Map(chosen.filter(r => r.switchUnit && r.ingId).map(r => [r.ingId, r.unit]));
+    if (switches.size) await store.updateMany('INGREDIENTS', [...switches].map(([id, unit]) => ({ id, record: { UNIT: unit } })));
     const now = store.today();
 
     // 2. Updates to entries already on the list.

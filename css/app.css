@@ -414,9 +414,17 @@ fieldset.field legend { padding: 0; margin-bottom: 8px; }
 .tag.used { background: #e6e8da; color: var(--olive-deep); }
 .supplier-info { display: grid; gap: 10px; }
 .pl-search { margin-bottom: 8px; display: block; }
-.pack-row { display: grid; grid-template-columns: 1fr 76px 1fr auto; gap: 8px; align-items: center; }
+.pack-row { display: grid; grid-template-columns: 1fr 92px 1fr auto; gap: 8px; align-items: center; }
+.pack-row select { padding-left: 10px; padding-right: 26px; background-position: right 6px center; }
 .paste-sheet input[type=text][data-pp-ref] { margin-bottom: 12px; }
 .history td + td { padding-left: 8px; }
+
+/* Price-list upload */
+.upload-btn { margin: 12px 0 4px; cursor: pointer; }
+.or-divider { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+.or-divider::before, .or-divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.pp-filter { margin: 4px 0 10px; }
+.pp-hidden { margin-top: 10px; }
 
 /* ---------- Add many ---------- */
 .head-actions { display: flex; gap: 8px; align-items: center; }

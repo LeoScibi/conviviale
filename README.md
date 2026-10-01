@@ -47,7 +47,8 @@ in `index.html` (one search-and-replace), and add any new `js/` module to the im
 | `js/costing.js` | Derived costs: price-list unit costs, preferred-else-cheapest price, yield |
 | `js/starter-ingredients.js` | Starter list of common wine-bar ingredients for the "Add many" screen |
 | `js/migrate.js` | One-off data migrations run on load (single-supplier prices → price lists) |
-| `js/pricelist-paste.js` | Parser for pasted supplier price lists |
+| `js/pricelist-paste.js` | Price-list parser (case vs per-kg price, pack sizes, sections) and product matching |
+| `js/pdf-text.js` | Reads a PDF into text rows (pdf.js) |
 | `js/units.js` | Recipe measurement families (weight / volume / each) and conversions |
 | `js/recipe-cost.js` | Live recipe costing: line costs, sub-recipes, cost per portion, GP, allergen roll-up, loop guard |
 | `js/recipe-paste.js` | Paste-a-recipe parser (ported from Carisma Ops) |
@@ -80,8 +81,14 @@ full-screen forms. It can be added to the home screen and opens like an app.
 - Pack sizes are stored in `g`, `ml` or `each`. Forms accept kg, cl and L and convert them.
 - Pack prices are ex VAT. Every new or changed price appends a row to PRICE_HISTORY with the date,
   supplier and an optional invoice reference.
-- A supplier's price list can be pasted in (from a spreadsheet, email or PDF). Items already on
-  their list, matched by product code or by ingredient and pack, get their price updated.
+- A supplier's price list can be uploaded as a PDF or pasted (from a spreadsheet or email). PDFs
+  are read with pdf.js (loaded from cdnjs on first use) and rebuilt row by row from the text
+  positions. Products are matched to your ingredients (the product must contain the
+  ingredient's main word, and a CHEESE/FISH/… heading must agree with its category); only
+  matches and products already on that supplier's list are ticked. Re-uploading next month's
+  list updates prices in place, matched by product code, or by the supplier's product name.
+- When the supplier sells an ingredient in a different measure (basil by the bunch) and the
+  ingredient has no prices and isn't in any recipe yet, it switches to the supplier's measure.
 - Sheets created before price lists keep their old SUPPLIER_CODE / PACK_SIZE / PACK_UNIT /
   PACK_PRICE columns on INGREDIENTS. On first load those prices are copied into SUPPLIER_PRICES;
   after that the app ignores the old columns, and they can be deleted from the sheet.

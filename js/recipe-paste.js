@@ -32,22 +32,33 @@ export const normName = s => String(s ?? '').toLowerCase().normalize('NFD').repl
   .replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 const singular = w => (w.endsWith('es') && w.length > 4) ? w.slice(0, -2)
   : (w.endsWith('s') && !w.endsWith('ss') && w.length > 3) ? w.slice(0, -1) : w;
-const nameTokens = s => normName(s).split(' ').filter(Boolean).map(singular);
+// Light stemming so English and Italian plurals meet: tomatoes/tomato → tomat,
+// datterini/datterino → datterin. Only -i/-o, so pasta and paste stay apart.
+const stem = w => { const s1 = singular(w); return s1.length > 4 ? s1.replace(/[io]$/, '') : s1; };
+export const nameTokens = s => normName(s).split(' ').filter(Boolean).map(stem);
+
+/** How well `name` matches an ingredient name (0 = no shared words; ≥ 0.9 counts as a match). */
+export function matchScore(name, ingName) {
+  const nt = nameTokens(name);
+  const it = nameTokens(ingName);
+  if (!nt.length || !it.length) return 0;
+  const overlap = nt.filter(t => it.includes(t)).length;
+  if (!overlap) return 0;
+  return overlap / it.length + overlap / nt.length + (normName(ingName) === normName(name) ? 1 : 0);
+}
+
+/** Best-scoring ingredient for `name`: { ing, score }, or null below the threshold. */
+export function bestMatch(name, ingredients) {
+  let best = null;
+  for (const ing of ingredients) {
+    const score = matchScore(name, ing.NAME);
+    if (score > (best?.score ?? 0)) best = { ing, score };
+  }
+  return best && best.score >= 0.9 ? best : null;
+}
 
 export function matchIngredient(name, ingredients) {
-  const nt = nameTokens(name);
-  if (!nt.length) return null;
-  let best = null;
-  let bestScore = 0;
-  for (const ing of ingredients) {
-    const it = nameTokens(ing.NAME);
-    if (!it.length) continue;
-    const overlap = nt.filter(t => it.includes(t)).length;
-    if (!overlap) continue;
-    const score = overlap / it.length + overlap / nt.length + (normName(ing.NAME) === normName(name) ? 1 : 0);
-    if (score > bestScore) { bestScore = score; best = ing; }
-  }
-  return bestScore >= 0.9 ? best : null;
+  return bestMatch(name, ingredients)?.ing ?? null;
 }
 
 const cleanName = s => s.replace(/\(.*?\)/g, ' ').split(',')[0].replace(NOISE, ' ').replace(/\s+/g, ' ').trim();
