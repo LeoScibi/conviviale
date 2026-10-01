@@ -30,6 +30,12 @@ python3 -m http.server 8000
 
 Then open http://localhost:8000.
 
+## Releasing
+
+GitHub Pages lets browsers cache files for 10 minutes. To stop a phone mixing a new page with
+old cached scripts, every file link carries a version (`?v=…`). On each release, bump the version
+in `index.html` (one search-and-replace), and add any new `js/` module to the import map there.
+
 ## Layout
 
 | File | Purpose |

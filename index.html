@@ -14,8 +14,31 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Aboreto&family=Montserrat:wght@400;500;600;700&display=swap">
-  <link rel="stylesheet" href="css/app.css">
-  <script type="module" src="js/main.js"></script>
+  <!-- Release version. Bump it (and the two ?v= below) on every deploy so browsers fetch
+       all files fresh together instead of mixing cached old modules with new ones.
+       Every module in js/ must be listed here. -->
+  <script type="importmap">
+  {
+    "imports": {
+      "./js/auth.js": "./js/auth.js?v=2026-10-01.1",
+      "./js/config.js": "./js/config.js?v=2026-10-01.1",
+      "./js/costing.js": "./js/costing.js?v=2026-10-01.1",
+      "./js/icons.js": "./js/icons.js?v=2026-10-01.1",
+      "./js/main.js": "./js/main.js?v=2026-10-01.1",
+      "./js/recipe-cost.js": "./js/recipe-cost.js?v=2026-10-01.1",
+      "./js/recipe-paste.js": "./js/recipe-paste.js?v=2026-10-01.1",
+      "./js/sheets.js": "./js/sheets.js?v=2026-10-01.1",
+      "./js/store.js": "./js/store.js?v=2026-10-01.1",
+      "./js/ui.js": "./js/ui.js?v=2026-10-01.1",
+      "./js/units.js": "./js/units.js?v=2026-10-01.1",
+      "./js/views/ingredients.js": "./js/views/ingredients.js?v=2026-10-01.1",
+      "./js/views/recipes.js": "./js/views/recipes.js?v=2026-10-01.1",
+      "./js/views/suppliers.js": "./js/views/suppliers.js?v=2026-10-01.1"
+    }
+  }
+  </script>
+  <link rel="stylesheet" href="css/app.css?v=2026-10-01.1">
+  <script type="module" src="js/main.js?v=2026-10-01.1"></script>
 </head>
 <body>
   <div id="loading" class="screen splash">
