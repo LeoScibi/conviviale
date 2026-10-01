@@ -52,6 +52,7 @@ async function start() {
     }
     auth.rememberHint(user.email);
     $('#user-email').textContent = user.email;
+    $('#user-initial').textContent = (user.given_name || user.email).trim().charAt(0);
 
     show('#loading', 'Preparing the spreadsheet…');
     const { createdTabs, addedColumns } = await sheets.ensureSchema(SCHEMA);
@@ -101,6 +102,7 @@ async function handleReconnect() {
 async function handleRefresh() {
   const btn = $('#refresh-btn');
   btn.disabled = true;
+  btn.classList.add('spinning');
   try {
     await store.loadAll();
     route();
@@ -109,10 +111,12 @@ async function handleRefresh() {
     toast(err.message, 'error');
   } finally {
     btn.disabled = false;
+    btn.classList.remove('spinning');
   }
 }
 
 function handleSignOut() {
+  $('.account').open = false;
   auth.signOut();
   document.querySelectorAll('dialog[open]').forEach(d => d.close());
   showSignin();
@@ -127,6 +131,11 @@ async function boot() {
   $('#signout-btn').addEventListener('click', handleSignOut);
   $('#retry-btn').addEventListener('click', start);
   window.addEventListener('hashchange', () => { if (!$('#app').hidden) route(); });
+  // Close the account menu when tapping anywhere else.
+  document.addEventListener('click', e => {
+    const menu = $('.account');
+    if (menu.open && !menu.contains(e.target)) menu.open = false;
+  });
 
   // Tokens last an hour. When one expires mid-session, keep the page (and any open form) as-is
   // and ask for a one-click reconnect instead of throwing the user back to the sign-in screen.

@@ -41,6 +41,18 @@ Then open http://localhost:8000.
 | `js/costing.js` | Derived costs: unit cost, usable cost after yield, unit conversion |
 | `js/ui.js` | Escaping, formatting, toasts, form dialog |
 | `js/views/*.js` | One module per screen |
+| `js/icons.js` | Line icons |
+| `assets/` | Brand wordmarks, tree-ring pattern, paper and olive textures, home-screen icons |
+
+## Brand
+
+Follows the Conviviale brand guide: Aboreto (headings, uppercase) and Montserrat (text), both from Google Fonts.
+Old Growth Olive `#5C5D46` is the primary colour, with Sage Lichen, Peeled Bark Cream, Maple Amber
+(prices and accents) and Buvette Blush (allergen tags). The tree-ring pattern is used as a CSS mask,
+so it can take any brand colour. Colours are defined as variables at the top of `css/app.css`.
+
+The layout is designed for phones first: bottom tab bar, floating add button, card lists and
+full-screen forms. It can be added to the home screen and opens like an app.
 
 ## Data rules
 

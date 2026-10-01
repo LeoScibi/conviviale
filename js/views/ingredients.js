@@ -1,5 +1,6 @@
 import * as store from '../store.js';
 import { ALLERGENS, CATEGORY_SUGGESTIONS, STORAGE_SUGGESTIONS } from '../config.js';
+import { icons } from '../icons.js';
 import { esc, money, formDialog, toast, byName, sameName, matches, option, splitList } from '../ui.js';
 import { PACK_UNIT_OPTIONS, normalisePack, unitCost, usableUnitCost, formatUnitCost } from '../costing.js';
 
@@ -18,38 +19,40 @@ export function render(el) {
 
   el.innerHTML = `
     <div class="page-head">
-      <h1>Ingredients</h1>
-      <button class="btn primary" data-add>+ Add ingredient</button>
+      <div>
+        <p class="overline" data-count></p>
+        <h1 class="title">Ingredients</h1>
+      </div>
+      <button class="btn primary add-desktop" data-add>${icons.plus} Add ingredient</button>
     </div>
     <div class="toolbar">
-      <input type="search" class="search" data-q value="${esc(state.q)}"
-        placeholder="Search name, code, supplier, allergen…" aria-label="Search ingredients">
-      <select data-cat aria-label="Filter by category">
-        <option value="">All categories</option>${cats.map(c => option(c, c, state.category)).join('')}
-      </select>
-      <select data-sup aria-label="Filter by supplier">
-        <option value="">All suppliers</option>
-        ${sups.map(s => option(s.SUPPLIER_ID, s.NAME, state.supplier)).join('')}
-        ${option('__none', 'No supplier', state.supplier)}
-      </select>
-      <label class="check"><input type="checkbox" data-inactive${state.inactive ? ' checked' : ''}> Show inactive</label>
+      <label class="search-wrap">${icons.search}
+        <input type="search" class="search" data-q value="${esc(state.q)}"
+          placeholder="Search ingredients" aria-label="Search ingredients">
+      </label>
+      <div class="filters">
+        <select data-cat aria-label="Filter by category">
+          <option value="">All categories</option>${cats.map(c => option(c, c, state.category)).join('')}
+        </select>
+        <select data-sup aria-label="Filter by supplier">
+          <option value="">All suppliers</option>
+          ${sups.map(s => option(s.SUPPLIER_ID, s.NAME, state.supplier)).join('')}
+          ${option('__none', 'No supplier', state.supplier)}
+        </select>
+        <label class="toggle-chip"><input type="checkbox" data-inactive${state.inactive ? ' checked' : ''}> Show inactive</label>
+      </div>
     </div>
-    <p class="count" data-count></p>
-    <div data-list></div>`;
+    <div data-list></div>
+    <button class="fab" data-add aria-label="Add ingredient">${icons.plus}</button>`;
 
   el.querySelector('[data-q]').addEventListener('input', e => { state.q = e.target.value; renderList(); });
   el.querySelector('[data-cat]').addEventListener('change', e => { state.category = e.target.value; renderList(); });
   el.querySelector('[data-sup]').addEventListener('change', e => { state.supplier = e.target.value; renderList(); });
   el.querySelector('[data-inactive]').addEventListener('change', e => { state.inactive = e.target.checked; renderList(); });
-  el.querySelector('[data-add]').addEventListener('click', () => openForm(null));
-  const listEl = el.querySelector('[data-list]');
-  listEl.addEventListener('click', e => {
-    const tr = e.target.closest('tr[data-id]');
-    if (tr) openForm(store.byId('INGREDIENTS', tr.dataset.id));
-  });
-  listEl.addEventListener('keydown', e => {
-    const tr = e.target.closest('tr[data-id]');
-    if (tr && e.key === 'Enter') openForm(store.byId('INGREDIENTS', tr.dataset.id));
+  el.querySelectorAll('[data-add]').forEach(b => b.addEventListener('click', () => openForm(null)));
+  el.querySelector('[data-list]').addEventListener('click', e => {
+    const hit = e.target.closest('.card-hit');
+    if (hit) openForm(store.byId('INGREDIENTS', hit.dataset.id));
   });
   renderList();
 }
@@ -67,7 +70,7 @@ function renderList() {
 
   const shown = all.filter(i => state.inactive || i.ACTIVE).length;
   root.querySelector('[data-count]').textContent =
-    list.length === shown ? `${shown} ingredients` : `${list.length} of ${shown} ingredients`;
+    list.length === shown ? (state.inactive ? `${shown} total` : `${shown} in use`) : `${list.length} of ${shown}`;
 
   if (!list.length) {
     root.querySelector('[data-list]').innerHTML = `<div class="empty">${
@@ -75,30 +78,30 @@ function renderList() {
     return;
   }
 
-  root.querySelector('[data-list]').innerHTML = `
-    <table class="data">
-      <thead><tr>
-        <th>Name</th><th>Category</th><th>Supplier</th><th class="num">Pack</th>
-        <th class="num">Pack price</th><th class="num">Yield</th><th class="num">Usable cost</th><th>Allergens</th>
-      </tr></thead>
-      <tbody>${list.map(i => {
-        const sup = sups.get(String(i.SUPPLIER_ID));
-        const allergens = splitList(i.ALLERGENS);
-        return `
-        <tr data-id="${esc(i.ING_ID)}" tabindex="0"${i.ACTIVE ? '' : ' class="inactive"'}>
-          <td data-label="Name"><strong>${esc(i.NAME)}</strong>${i.ACTIVE ? '' : ' <span class="tag">inactive</span>'}
-            ${i.SUPPLIER_CODE ? `<div class="sub">${esc(i.SUPPLIER_CODE)}</div>` : ''}</td>
-          <td data-label="Category">${esc(i.CATEGORY) || '—'}</td>
-          <td data-label="Supplier">${sup ? esc(sup.NAME) : i.SUPPLIER_ID ? `<span class="warn">${esc(i.SUPPLIER_ID)}?</span>` : '—'}</td>
-          <td data-label="Pack" class="num">${i.PACK_SIZE === '' ? '—' : `${esc(i.PACK_SIZE)} ${esc(i.PACK_UNIT)}`}</td>
-          <td data-label="Pack price" class="num">${money(i.PACK_PRICE)}</td>
-          <td data-label="Yield" class="num">${i['YIELD_%'] === '' ? '100%' : `${esc(i['YIELD_%'])}%`}</td>
-          <td data-label="Usable cost" class="num">${formatUnitCost(usableUnitCost(i), i.PACK_UNIT)}</td>
-          <td data-label="Allergens">${allergens.length ? allergens.map(a => `<span class="tag allergen">${esc(a)}</span>`).join(' ') : '<span class="muted">None</span>'}</td>
-        </tr>`;
-      }).join('')}
-      </tbody>
-    </table>`;
+  root.querySelector('[data-list]').innerHTML = `<div class="cards">${list.map(i => {
+    const sup = sups.get(String(i.SUPPLIER_ID));
+    const supName = sup ? esc(sup.NAME) : i.SUPPLIER_ID ? `<span class="warn">${esc(i.SUPPLIER_ID)}?</span>` : '';
+    const sub = [esc(i.CATEGORY), supName].filter(Boolean).join(' · ') || 'No category';
+    const allergens = splitList(i.ALLERGENS);
+    const yieldPct = i['YIELD_%'] === '' ? 100 : i['YIELD_%'];
+    return `
+    <article class="card${i.ACTIVE ? '' : ' inactive'}">
+      <button class="card-hit" data-id="${esc(i.ING_ID)}" aria-label="Edit ${esc(i.NAME)}"></button>
+      <div class="card-top">
+        <div>
+          <div class="card-name">${esc(i.NAME)}${i.ACTIVE ? '' : ' <span class="tag">Inactive</span>'}</div>
+          <div class="card-sub">${sub}</div>
+        </div>
+        <div class="card-figure"><strong>${formatUnitCost(usableUnitCost(i), i.PACK_UNIT)}</strong><span>usable cost</span></div>
+      </div>
+      <div class="card-meta">
+        <span>${i.PACK_SIZE === '' ? 'No pack size' : `<b>${esc(i.PACK_SIZE)} ${esc(i.PACK_UNIT)}</b>`} for <b>${money(i.PACK_PRICE)}</b></span>
+        ${Number(yieldPct) !== 100 ? `<span>Yield <b>${esc(yieldPct)}%</b></span>` : ''}
+        ${i.SUPPLIER_CODE ? `<span>Code <b>${esc(i.SUPPLIER_CODE)}</b></span>` : ''}
+      </div>
+      ${allergens.length ? `<div class="tags">${allergens.map(a => `<span class="tag allergen">${esc(a)}</span>`).join('')}</div>` : ''}
+    </article>`;
+  }).join('')}</div>`;
 }
 
 function historyHtml(ingId) {
@@ -127,20 +130,20 @@ export function openForm(ing) {
 
   const fields = [
     { name: 'NAME', label: 'Ingredient name', required: true, wide: true },
-    { name: 'CATEGORY', label: 'Category', suggestions: categories },
+    { name: 'CATEGORY', label: 'Category', suggestions: categories, half: true },
+    { name: 'STORAGE', label: 'Storage', suggestions: STORAGE_SUGGESTIONS, half: true },
     { name: 'SUPPLIER_ID', label: 'Supplier', type: 'select', options: supOptions },
     { name: 'SUPPLIER_CODE', label: 'Supplier product code' },
-    { name: 'PACK_SIZE', label: 'Pack size', type: 'number', required: true, min: 0.001, step: 'any', inputmode: 'decimal' },
-    { name: 'PACK_UNIT', label: 'Unit', type: 'select', required: true, options: PACK_UNIT_OPTIONS,
-      hint: 'kg, cl and L are converted to g / ml when saved. A 75cl bottle = 750 ml.' },
-    { name: 'PACK_PRICE', label: 'Pack price £ (ex VAT)', type: 'number', required: true, min: 0, step: 0.01, inputmode: 'decimal' },
+    { name: 'PACK_SIZE', label: 'Pack size', type: 'number', required: true, min: 0.001, step: 'any', inputmode: 'decimal', half: true },
+    { name: 'PACK_UNIT', label: 'Unit', type: 'select', required: true, options: PACK_UNIT_OPTIONS, half: true },
+    { name: 'PACK_PRICE', label: 'Pack price £', type: 'number', required: true, min: 0, step: 0.01, inputmode: 'decimal', half: true,
+      hint: 'Ex VAT' },
+    { name: 'YIELD_%', label: 'Yield %', type: 'number', min: 1, max: 100, step: 'any', inputmode: 'decimal', half: true,
+      hint: 'Usable after trim' },
     { name: 'INVOICE_REF', label: 'Invoice ref', placeholder: 'Optional',
       hint: isNew ? 'Saved with the first price-history entry.' : 'Saved to price history if the price changes.' },
-    { name: 'YIELD_%', label: 'Yield %', type: 'number', min: 1, max: 100, step: 'any', inputmode: 'decimal',
-      hint: 'Usable share after trim and waste.' },
-    { name: 'STORAGE', label: 'Storage', suggestions: STORAGE_SUGGESTIONS },
     { name: 'SHELF_LIFE', label: 'Shelf life', placeholder: 'e.g. 5 days, 3 days once opened' },
-    { name: 'ACTIVE', label: 'Active (in use)', type: 'checkbox' },
+    { name: 'ACTIVE', label: 'Active (in use)', type: 'checkbox', wide: true },
     { name: 'ALLERGENS', label: 'Allergens', type: 'chips', options: ALLERGENS, wide: true },
   ];
 

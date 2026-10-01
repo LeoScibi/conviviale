@@ -45,7 +45,7 @@ let uid = 0;
 
 function fieldHtml(f, value) {
   const id = `f${++uid}`;
-  const cls = `field${f.wide ? ' wide' : ''}`;
+  const cls = `field${f.wide ? ' wide' : ''}${f.half ? ' half' : ''}`;
   const label = `${esc(f.label)}${f.required ? ' <span class="req">*</span>' : ''}`;
   const hint = f.hint ? `<small class="hint">${esc(f.hint)}</small>` : '';
   const v = value ?? f.default ?? '';

@@ -1,5 +1,6 @@
 import * as store from '../store.js';
 import { ORDER_DAYS } from '../config.js';
+import { icons } from '../icons.js';
 import { esc, money, formDialog, toast, byName, sameName, matches, splitList } from '../ui.js';
 
 const state = { q: '' };
@@ -9,26 +10,26 @@ export function render(el) {
   root = el;
   el.innerHTML = `
     <div class="page-head">
-      <h1>Suppliers</h1>
-      <button class="btn primary" data-add>+ Add supplier</button>
+      <div>
+        <p class="overline" data-count></p>
+        <h1 class="title">Suppliers</h1>
+      </div>
+      <button class="btn primary add-desktop" data-add>${icons.plus} Add supplier</button>
     </div>
     <div class="toolbar">
-      <input type="search" class="search" data-q value="${esc(state.q)}"
-        placeholder="Search name, contact, email, phone…" aria-label="Search suppliers">
+      <label class="search-wrap">${icons.search}
+        <input type="search" class="search" data-q value="${esc(state.q)}"
+          placeholder="Search suppliers" aria-label="Search suppliers">
+      </label>
     </div>
-    <p class="count" data-count></p>
-    <div data-list></div>`;
+    <div data-list></div>
+    <button class="fab" data-add aria-label="Add supplier">${icons.plus}</button>`;
 
   el.querySelector('[data-q]').addEventListener('input', e => { state.q = e.target.value; renderList(); });
-  el.querySelector('[data-add]').addEventListener('click', () => openForm(null));
+  el.querySelectorAll('[data-add]').forEach(b => b.addEventListener('click', () => openForm(null)));
   el.querySelector('[data-list]').addEventListener('click', e => {
-    if (e.target.closest('a')) return;
-    const tr = e.target.closest('tr[data-id]');
-    if (tr) openForm(store.byId('SUPPLIERS', tr.dataset.id));
-  });
-  el.querySelector('[data-list]').addEventListener('keydown', e => {
-    const tr = e.target.closest('tr[data-id]');
-    if (tr && e.key === 'Enter') openForm(store.byId('SUPPLIERS', tr.dataset.id));
+    const hit = e.target.closest('.card-hit');
+    if (hit) openForm(store.byId('SUPPLIERS', hit.dataset.id));
   });
   renderList();
 }
@@ -44,7 +45,7 @@ function renderList() {
     .sort(byName);
 
   root.querySelector('[data-count]').textContent =
-    list.length === all.length ? `${all.length} suppliers` : `${list.length} of ${all.length} suppliers`;
+    list.length === all.length ? `${all.length} on file` : `${list.length} of ${all.length}`;
 
   if (!list.length) {
     root.querySelector('[data-list]').innerHTML = `<div class="empty">${
@@ -52,25 +53,32 @@ function renderList() {
     return;
   }
 
-  root.querySelector('[data-list]').innerHTML = `
-    <table class="data">
-      <thead><tr>
-        <th>Name</th><th>Contact</th><th>Phone</th><th>Email</th>
-        <th>Order days</th><th class="num">Lead time</th><th class="num">Min order</th><th class="num">Ingredients</th>
-      </tr></thead>
-      <tbody>${list.map(s => `
-        <tr data-id="${esc(s.SUPPLIER_ID)}" tabindex="0">
-          <td data-label="Name"><strong>${esc(s.NAME)}</strong></td>
-          <td data-label="Contact">${esc(s.CONTACT) || '—'}</td>
-          <td data-label="Phone">${s.PHONE ? `<a href="tel:${esc(String(s.PHONE).replace(/\s/g, ''))}">${esc(s.PHONE)}</a>` : '—'}</td>
-          <td data-label="Email">${s.EMAIL ? `<a href="mailto:${esc(s.EMAIL)}">${esc(s.EMAIL)}</a>` : '—'}</td>
-          <td data-label="Order days">${esc(splitList(s.ORDER_DAYS).join(' · ')) || '—'}</td>
-          <td data-label="Lead time" class="num">${s.LEAD_TIME === '' ? '—' : `${esc(s.LEAD_TIME)} d`}</td>
-          <td data-label="Min order" class="num">${money(s.MIN_ORDER)}</td>
-          <td data-label="Ingredients" class="num">${ingCount[s.SUPPLIER_ID] || 0}</td>
-        </tr>`).join('')}
-      </tbody>
-    </table>`;
+  root.querySelector('[data-list]').innerHTML = `<div class="cards">${list.map(s => {
+    const days = splitList(s.ORDER_DAYS).map(d => d.slice(0, 3).toLowerCase());
+    const count = ingCount[s.SUPPLIER_ID] || 0;
+    const lead = s.LEAD_TIME === '' ? '' : `${s.LEAD_TIME} day${s.LEAD_TIME === 1 ? '' : 's'}`;
+    return `
+    <article class="card">
+      <button class="card-hit" data-id="${esc(s.SUPPLIER_ID)}" aria-label="Edit ${esc(s.NAME)}"></button>
+      <div class="card-top">
+        <div>
+          <div class="card-name">${esc(s.NAME)}</div>
+          <div class="card-sub">${esc(s.CONTACT) || 'No contact name'}</div>
+        </div>
+        <div class="card-figure"><strong>${count}</strong><span>ingredient${count === 1 ? '' : 's'}</span></div>
+      </div>
+      <div class="days" aria-label="Order days: ${esc(splitList(s.ORDER_DAYS).join(', ') || 'none set')}">${
+        ORDER_DAYS.map(d => `<span class="day${days.includes(d.toLowerCase()) ? ' on' : ''}" aria-hidden="true">${d}</span>`).join('')}</div>
+      ${lead || s.MIN_ORDER !== '' ? `<div class="card-meta">
+        ${lead ? `<span>${icons.clock}Lead time <b>${esc(lead)}</b></span>` : ''}
+        ${s.MIN_ORDER !== '' ? `<span>Min order <b>${money(s.MIN_ORDER)}</b></span>` : ''}
+      </div>` : ''}
+      ${s.PHONE || s.EMAIL ? `<div class="card-actions">
+        ${s.PHONE ? `<a class="btn" href="tel:${esc(String(s.PHONE).replace(/\s/g, ''))}">${icons.phone} Call</a>` : ''}
+        ${s.EMAIL ? `<a class="btn" href="mailto:${esc(s.EMAIL)}">${icons.mail} Email</a>` : ''}
+      </div>` : ''}
+    </article>`;
+  }).join('')}</div>`;
 }
 
 const FIELDS = [
@@ -79,8 +87,8 @@ const FIELDS = [
   { name: 'PHONE', label: 'Phone', type: 'tel', autocomplete: 'off' },
   { name: 'EMAIL', label: 'Email', type: 'email', wide: true, autocomplete: 'off' },
   { name: 'ORDER_DAYS', label: 'Order days', type: 'chips', options: ORDER_DAYS, wide: true },
-  { name: 'LEAD_TIME', label: 'Lead time (days)', type: 'number', min: 0, step: 1, inputmode: 'numeric' },
-  { name: 'MIN_ORDER', label: 'Minimum order (£)', type: 'number', min: 0, step: 0.01, inputmode: 'decimal' },
+  { name: 'LEAD_TIME', label: 'Lead time (days)', type: 'number', min: 0, step: 1, inputmode: 'numeric', half: true },
+  { name: 'MIN_ORDER', label: 'Minimum order (£)', type: 'number', min: 0, step: 0.01, inputmode: 'decimal', half: true },
 ];
 
 export function openForm(sup, { onSaved } = {}) {
