@@ -264,6 +264,7 @@ dialog.modal::backdrop { background: rgb(35 36 31 / .5); }
   background: var(--surface); flex-shrink: 0;
 }
 .modal-foot .btn { flex: 1; }
+.modal-foot .foot-left { flex: 0 0 auto; margin-right: auto; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 12px; }
 .form-grid > .field { grid-column: 1 / -1; }
 .form-grid > .field.half { grid-column: auto; }
@@ -395,6 +396,27 @@ fieldset.field legend { padding: 0; margin-bottom: 8px; }
 
 .toast { display: flex; align-items: center; gap: 12px; }
 .toast-action { font: inherit; font-weight: 700; color: #fff; background: rgb(255 255 255 / .18); border: 0; border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+
+/* ---------- Price lists ---------- */
+.prices { margin-top: 20px; }
+.price-rows { display: grid; gap: 6px; }
+.price-row {
+  width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 56px;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface);
+  font: inherit; text-align: left; color: inherit; cursor: pointer;
+}
+.price-row:hover, .price-row:focus-visible { border-color: var(--olive); }
+.pr-main { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 14px; }
+.pr-main small { flex-basis: 100%; font-size: 12px; color: var(--muted); }
+.pr-cost { display: grid; text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.pr-cost b { font-size: 15px; }
+.pr-cost small { font-size: 11px; color: var(--muted); }
+.tag.used { background: #e6e8da; color: var(--olive-deep); }
+.supplier-info { display: grid; gap: 10px; }
+.pl-search { margin-bottom: 8px; display: block; }
+.pack-row { display: grid; grid-template-columns: 1fr 76px 1fr auto; gap: 8px; align-items: center; }
+.paste-sheet input[type=text][data-pp-ref] { margin-bottom: 12px; }
+.history td + td { padding-left: 8px; }
 
 /* ---------- Toasts ---------- */
 .toasts {

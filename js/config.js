@@ -18,16 +18,29 @@ export const SCHEMA = {
     headers: ['SUPPLIER_ID', 'NAME', 'CONTACT', 'EMAIL', 'PHONE', 'ORDER_DAYS', 'LEAD_TIME', 'MIN_ORDER'],
     numbers: ['LEAD_TIME', 'MIN_ORDER'],
   },
+  // An ingredient is generic: what it is and how it's measured (UNIT: g / ml / each).
+  // Prices live in SUPPLIER_PRICES. SUPPLIER_ID here is the *preferred* supplier; blank means
+  // recipes use the cheapest price. Sheets created before price lists still carry old
+  // SUPPLIER_CODE / PACK_* columns on this tab; the app no longer reads them after migrating.
   INGREDIENTS: {
     idField: 'ING_ID',
     idPrefix: 'ING',
-    headers: ['ING_ID', 'NAME', 'CATEGORY', 'SUPPLIER_ID', 'SUPPLIER_CODE', 'PACK_SIZE', 'PACK_UNIT',
-      'PACK_PRICE', 'YIELD_%', 'ALLERGENS', 'STORAGE', 'SHELF_LIFE', 'ACTIVE'],
-    numbers: ['PACK_SIZE', 'PACK_PRICE', 'YIELD_%'],
+    headers: ['ING_ID', 'NAME', 'CATEGORY', 'UNIT', 'SUPPLIER_ID', 'YIELD_%', 'ALLERGENS', 'STORAGE',
+      'SHELF_LIFE', 'ACTIVE'],
+    numbers: ['YIELD_%'],
     booleans: ['ACTIVE'],
   },
+  // A supplier's price list: one row per supplier + ingredient + pack. PACK_UNIT is stored as
+  // g / ml / each; UPDATED is the date the price was last set.
+  SUPPLIER_PRICES: {
+    idField: 'PRICE_ID',
+    idPrefix: 'SP',
+    headers: ['PRICE_ID', 'SUPPLIER_ID', 'ING_ID', 'SUPPLIER_CODE', 'PRODUCT_NAME', 'PACK_SIZE', 'PACK_UNIT',
+      'PACK_PRICE', 'UPDATED'],
+    numbers: ['PACK_SIZE', 'PACK_PRICE'],
+  },
   PRICE_HISTORY: {
-    headers: ['DATE', 'ING_ID', 'PACK_PRICE', 'INVOICE_REF'],
+    headers: ['DATE', 'ING_ID', 'PACK_PRICE', 'INVOICE_REF', 'SUPPLIER_ID', 'PRICE_ID'],
     numbers: ['PACK_PRICE'],
   },
   RECIPES: {

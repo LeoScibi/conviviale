@@ -44,12 +44,14 @@ in `index.html` (one search-and-replace), and add any new `js/` module to the im
 | `js/auth.js` | Google Identity Services token client, domain check, session expiry |
 | `js/sheets.js` | Sheets API wrapper: schema setup, read tables by header, append, update row by ID |
 | `js/store.js` | In-memory cache, type coercion, ID generation (`SUP-0001`, `ING-0001`, `REC-0001`) |
-| `js/costing.js` | Derived costs: unit cost, usable cost after yield, unit conversion |
+| `js/costing.js` | Derived costs: price-list unit costs, preferred-else-cheapest price, yield |
+| `js/migrate.js` | One-off data migrations run on load (single-supplier prices → price lists) |
+| `js/pricelist-paste.js` | Parser for pasted supplier price lists |
 | `js/units.js` | Recipe measurement families (weight / volume / each) and conversions |
 | `js/recipe-cost.js` | Live recipe costing: line costs, sub-recipes, cost per portion, GP, allergen roll-up, loop guard |
 | `js/recipe-paste.js` | Paste-a-recipe parser (ported from Carisma Ops) |
 | `js/ui.js` | Escaping, formatting, toasts, form dialog |
-| `js/views/*.js` | One module per screen |
+| `js/views/*.js` | One module per screen; `prices.js` is the shared price-list entry form |
 | `js/icons.js` | Line icons |
 | `assets/` | Brand wordmarks, tree-ring pattern, paper and olive textures, home-screen icons |
 
@@ -69,9 +71,19 @@ full-screen forms. It can be added to the home screen and opens like an app.
   own (e.g. NOTES) in the sheet. The app preserves them.
 - Records link by ID, never by name.
 - Only raw inputs are stored. Costs are computed in the app.
-- Pack sizes are stored in `g`, `ml` or `each`. The form accepts kg, cl and L and converts them.
-- Pack prices are ex VAT. Every price change (and each new ingredient) appends a row to
-  PRICE_HISTORY with today's date and an optional invoice reference.
+- Ingredients are generic: name, category, how they're measured (`UNIT`: g / ml / each), yield,
+  allergens. Prices live in **SUPPLIER_PRICES**, one row per supplier + ingredient + pack, so an
+  ingredient can have several suppliers (and a supplier several pack sizes).
+- An ingredient's `SUPPLIER_ID` is its *preferred* supplier. Recipes use that supplier's price;
+  if it's blank or the supplier has no price, the cheapest price per kg / L / each is used.
+- Pack sizes are stored in `g`, `ml` or `each`. Forms accept kg, cl and L and convert them.
+- Pack prices are ex VAT. Every new or changed price appends a row to PRICE_HISTORY with the date,
+  supplier and an optional invoice reference.
+- A supplier's price list can be pasted in (from a spreadsheet, email or PDF). Items already on
+  their list, matched by product code or by ingredient and pack, get their price updated.
+- Sheets created before price lists keep their old SUPPLIER_CODE / PACK_SIZE / PACK_UNIT /
+  PACK_PRICE columns on INGREDIENTS. On first load those prices are copied into SUPPLIER_PRICES;
+  after that the app ignores the old columns, and they can be deleted from the sheet.
 - Ingredients are retired by unticking ACTIVE rather than deleted, so recipes keep working.
 - RECIPE_LINES has two extra columns, `LINE_ID` and `SORT`, so a single line can be edited,
   reordered or removed in place. Lines added straight into the sheet without a LINE_ID still

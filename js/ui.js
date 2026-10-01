@@ -137,7 +137,7 @@ function readForm(form, fields) {
  * (e.g. validation or an expired session, so nothing typed is lost).
  * `onChange(data, dialog)` runs on every edit, for live previews.
  */
-export function formDialog({ title, fields, values = {}, submitLabel = 'Save', extraHtml = '', onSubmit, onChange }) {
+export function formDialog({ title, fields, values = {}, submitLabel = 'Save', extraHtml = '', onSubmit, onChange, onOpen, onDelete, deleteLabel = 'Delete' }) {
   const dlg = document.createElement('dialog');
   dlg.className = 'modal';
   dlg.innerHTML = `
@@ -152,6 +152,7 @@ export function formDialog({ title, fields, values = {}, submitLabel = 'Save', e
       </div>
       <p class="form-error" role="alert" hidden></p>
       <footer class="modal-foot">
+        ${onDelete ? `<button type="button" class="btn danger foot-left" data-delete>${esc(deleteLabel)}</button>` : ''}
         <button type="button" class="btn" data-close>Cancel</button>
         <button type="submit" class="btn primary">${esc(submitLabel)}</button>
       </footer>
@@ -205,8 +206,25 @@ export function formDialog({ title, fields, values = {}, submitLabel = 'Save', e
     }
   });
 
+  // onDelete runs like a submit: throw to show an error, return false to keep the dialog open.
+  dlg.querySelector('[data-delete]')?.addEventListener('click', async () => {
+    if (busy) return;
+    busy = true;
+    errEl.hidden = true;
+    try {
+      if ((await onDelete()) !== false) { busy = false; dlg.close(); }
+    } catch (err) {
+      console.error(err);
+      errEl.textContent = err.message || String(err);
+      errEl.hidden = false;
+    } finally {
+      busy = false;
+    }
+  });
+
   dlg.showModal();
   parkToasts();
+  onOpen?.(dlg);
   changed();
   form.querySelector('input:not([type=checkbox]), select, textarea')?.focus();
   return dlg;

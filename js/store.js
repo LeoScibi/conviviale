@@ -4,6 +4,10 @@ import { SCHEMA } from './config.js';
 import * as sheets from './sheets.js';
 
 const tables = {};
+let version = 0;
+
+/** Bumped on every reload of any tab, so derived caches know when to rebuild. */
+export const dataVersion = () => version;
 
 function coerceIn(tab, rec) {
   const s = SCHEMA[tab];
@@ -37,6 +41,7 @@ function coerceOut(tab, rec) {
 function put(tab, table) {
   table.rows.forEach(r => coerceIn(tab, r));
   tables[tab] = table;
+  version++;
 }
 
 export async function loadAll() {
@@ -104,12 +109,13 @@ export async function remove(spec) {
   await refresh(...tabs);
 }
 
-export async function logPrice(ingId, packPrice, invoiceRef = '') {
+export const today = () => new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD, local time
+
+/** Append price-history rows: entries are { ING_ID, SUPPLIER_ID, PRICE_ID, PACK_PRICE, INVOICE_REF }. */
+export async function logPrices(entries) {
+  if (!entries.length) return;
   const tab = 'PRICE_HISTORY';
-  const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD, local time
   const headers = tables[tab]?.headers?.length ? tables[tab].headers : SCHEMA[tab].headers;
-  await sheets.appendRows(tab, headers, [
-    coerceOut(tab, { DATE: today, ING_ID: ingId, PACK_PRICE: packPrice, INVOICE_REF: invoiceRef }),
-  ]);
+  await sheets.appendRows(tab, headers, entries.map(e => coerceOut(tab, { DATE: today(), INVOICE_REF: '', ...e })));
   await refresh(tab);
 }

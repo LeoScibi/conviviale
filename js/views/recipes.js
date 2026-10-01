@@ -6,7 +6,7 @@ import * as store from '../store.js';
 import { RECIPE_TYPES, RECIPE_DEFAULTS } from '../config.js';
 import { icons } from '../icons.js';
 import { esc, money, formDialog, toast, reportError, byName, sameName, matches, parkToasts } from '../ui.js';
-import { formatUnitCost, usableUnitCost } from '../costing.js';
+import { formatUnitCost, usableUnitCost, chosenPrice } from '../costing.js';
 import { createCoster, ingredientFamily, isSub } from '../recipe-cost.js';
 import { BASE, unitsFor, unitLabel, fmtQty, normUnit, familyOf, toBase } from '../units.js';
 import { parseRecipeText, normName } from '../recipe-paste.js';
@@ -353,7 +353,7 @@ function lineHtml(lc, factor, supplierNames) {
   const open = id && ds.open === id;
   const name = lc.item ? lc.item.NAME : `${l.ITEM_ID} (deleted)`;
   const kind = lc.type === 'SUB' ? 'Sub-recipe'
-    : lc.item ? (supplierNames.get(String(lc.item.SUPPLIER_ID)) || 'No supplier') + (lc.item.ACTIVE ? '' : ' · inactive') : 'Ingredient';
+    : lc.item ? (supplierNames.get(String(chosenPrice(lc.item)?.price.SUPPLIER_ID)) || 'No supplier price') + (lc.item.ACTIVE ? '' : ' · inactive') : 'Ingredient';
   const qty = Number(l.QTY) * factor;
   const unit = normUnit(l.UNIT);
   const qtyText = `${fmtQty(qty)} ${unit === 'portion' && qty !== 1 ? 'portions' : unit}`;
@@ -860,7 +860,7 @@ async function addParsed() {
     for (const p of rows.filter(r => !r.ingId)) {
       const key = normName(p.name);
       const nm = p.name.trim();
-      if (!fresh.has(key)) fresh.set(key, { NAME: nm.charAt(0).toUpperCase() + nm.slice(1), PACK_UNIT: BASE[p.family] || 'g', 'YIELD_%': 100, ACTIVE: true });
+      if (!fresh.has(key)) fresh.set(key, { NAME: nm.charAt(0).toUpperCase() + nm.slice(1), UNIT: BASE[p.family] || 'g', 'YIELD_%': 100, ACTIVE: true });
     }
     if (fresh.size) {
       const ids = await store.createMany('INGREDIENTS', [...fresh.values()]);

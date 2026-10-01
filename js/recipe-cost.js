@@ -3,13 +3,11 @@
 
 import * as store from './store.js';
 import { RECIPE_DEFAULTS } from './config.js';
-import { usableUnitCost } from './costing.js';
+import { usableUnitCost, ingredientFamily } from './costing.js';
 import { splitList } from './ui.js';
 import { BASE, familyOf, toBase, normUnit } from './units.js';
 
-const ING_FAMILY = { g: 'weight', ml: 'volume', each: 'each' };
-
-export const ingredientFamily = ing => ING_FAMILY[normUnit(ing?.PACK_UNIT)] ?? null;
+export { ingredientFamily };
 
 /** A recipe's yield family (from YIELD_UNIT), or null if it has no measurable yield. */
 export const recipeFamily = rec => familyOf(rec?.YIELD_UNIT);
