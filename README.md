@@ -45,6 +45,7 @@ in `index.html` (one search-and-replace), and add any new `js/` module to the im
 | `js/sheets.js` | Sheets API wrapper: schema setup, read tables by header, append, update row by ID |
 | `js/store.js` | In-memory cache, type coercion, ID generation (`SUP-0001`, `ING-0001`, `REC-0001`) |
 | `js/costing.js` | Derived costs: price-list unit costs, preferred-else-cheapest price, yield |
+| `js/starter-ingredients.js` | Starter list of common wine-bar ingredients for the "Add many" screen |
 | `js/migrate.js` | One-off data migrations run on load (single-supplier prices → price lists) |
 | `js/pricelist-paste.js` | Parser for pasted supplier price lists |
 | `js/units.js` | Recipe measurement families (weight / volume / each) and conversions |

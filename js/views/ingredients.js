@@ -1,12 +1,14 @@
 import * as store from '../store.js';
 import { ALLERGENS, CATEGORY_SUGGESTIONS, STORAGE_SUGGESTIONS } from '../config.js';
 import { icons } from '../icons.js';
-import { esc, money, formDialog, toast, byName, sameName, matches, option, splitList } from '../ui.js';
+import { esc, money, formDialog, toast, reportError, parkToasts, byName, sameName, matches, option, splitList } from '../ui.js';
 import {
   PACK_UNIT_OPTIONS, MEASURE_OPTIONS, normalisePack, priceUnitCost, pricesFor, chosenPrice, ingredientUnit,
   usableUnitCost, yieldFraction, formatUnitCost, packLabel,
 } from '../costing.js';
 import { openPriceForm, priceRowHtml, supplierName } from './prices.js';
+import { STARTER_INGREDIENTS, guessUnit } from '../starter-ingredients.js';
+import { normName } from '../recipe-paste.js';
 
 const state = { q: '', category: '', supplier: '', inactive: false };
 let root;
@@ -27,7 +29,10 @@ export function render(el) {
         <p class="overline" data-count></p>
         <h1 class="title">Ingredients</h1>
       </div>
-      <button class="btn primary add-desktop" data-add>${icons.plus} Add ingredient</button>
+      <div class="head-actions">
+        <button class="btn sm" data-bulk>Add many</button>
+        <button class="btn primary add-desktop" data-add>${icons.plus} Add ingredient</button>
+      </div>
     </div>
     <div class="toolbar">
       <label class="search-wrap">${icons.search}
@@ -54,6 +59,7 @@ export function render(el) {
   el.querySelector('[data-sup]').addEventListener('change', e => { state.supplier = e.target.value; renderList(); });
   el.querySelector('[data-inactive]').addEventListener('change', e => { state.inactive = e.target.checked; renderList(); });
   el.querySelectorAll('[data-add]').forEach(b => b.addEventListener('click', () => openForm(null)));
+  el.querySelector('[data-bulk]').addEventListener('click', openBulk);
   el.querySelector('[data-list]').addEventListener('click', e => {
     const hit = e.target.closest('.card-hit');
     if (hit) openForm(store.byId('INGREDIENTS', hit.dataset.id));
@@ -280,4 +286,159 @@ export function openForm(ing, { prefill = {}, onSaved } = {}) {
       onSaved?.(id);
     },
   });
+}
+
+// ============================================================ add many
+
+let bulkDlg = null;
+let bulk = []; // { NAME, CATEGORY, UNIT, ALLERGENS, STORAGE, include, exists }
+
+function ensureBulkDialog() {
+  if (bulkDlg) return;
+  bulkDlg = document.createElement('dialog');
+  bulkDlg.className = 'modal paste-sheet bulk-sheet';
+  bulkDlg.innerHTML = `
+    <div class="modal-form">
+      <header class="modal-head">
+        <h2>Add many ingredients</h2>
+        <button type="button" class="icon-btn" data-act="close" aria-label="Close">&times;</button>
+      </header>
+      <div class="modal-body">
+        <p class="muted small">Start from a list of ingredients common in a wine bar, or type your own, one per line (optionally <i>name, category</i>). They're added without a supplier or price; link them from each supplier's page later. Allergens on the starter list are the obvious ones only: check them against your suppliers' specs.</p>
+        <button type="button" class="btn block" data-act="starter">Load the starter list (${STARTER_INGREDIENTS.length})</button>
+        <textarea data-bulk-text rows="4" placeholder="${esc('Wild garlic\nBlood oranges, Fruit\nSmoked almonds, Dry goods')}"></textarea>
+        <button type="button" class="btn block" data-act="typed">Add these names to the list</button>
+        <p class="small muted paste-summary" data-bulk-summary></p>
+        <div data-bulk-rows></div>
+      </div>
+      <footer class="modal-foot">
+        <button type="button" class="btn" data-act="close">Cancel</button>
+        <button type="button" class="btn primary" data-act="save" disabled>Add ingredients</button>
+      </footer>
+    </div>`;
+  document.body.append(bulkDlg);
+  bulkDlg.addEventListener('close', parkToasts);
+  bulkDlg.addEventListener('cancel', e => { if (!confirmBulkDiscard()) e.preventDefault(); });
+  bulkDlg.addEventListener('click', e => {
+    const act = e.target.closest('[data-act]')?.dataset.act;
+    if (act === 'close') { if (confirmBulkDiscard()) bulkDlg.close(); } else if (act === 'starter') addBulkRows(STARTER_INGREDIENTS);
+    else if (act === 'typed') addTyped();
+    else if (act === 'save') saveBulk();
+  });
+  bulkDlg.addEventListener('change', e => {
+    const t = e.target;
+    if (t.matches('[data-cat-toggle]')) {
+      bulk.filter(r => r.CATEGORY === t.dataset.catToggle && !r.exists).forEach(r => { r.include = t.checked; });
+      renderBulk();
+      return;
+    }
+    const row = t.closest('[data-b]');
+    if (!row) return;
+    const r = bulk[Number(row.dataset.b)];
+    if (t.matches('[data-f=include]')) r.include = t.checked;
+    if (t.matches('[data-f=unit]')) r.UNIT = t.value;
+    if (t.matches('[data-f=name]')) { r.NAME = t.value.trim() || r.NAME; markExisting(r); }
+    renderBulk();
+  });
+}
+
+function confirmBulkDiscard() {
+  return !bulk.some(r => r.include) || confirm('Discard this list without adding anything?');
+}
+
+function openBulk() {
+  ensureBulkDialog();
+  bulk = [];
+  bulkDlg.querySelector('[data-bulk-text]').value = '';
+  renderBulk();
+  bulkDlg.showModal();
+  parkToasts();
+}
+
+function markExisting(r) {
+  const taken = new Set(store.rows('INGREDIENTS').map(i => normName(i.NAME)));
+  r.exists = taken.has(normName(r.NAME));
+  if (r.exists) r.include = false;
+}
+
+function addBulkRows(items) {
+  const already = new Set(bulk.map(r => normName(r.NAME)));
+  for (const it of items) {
+    if (already.has(normName(it.NAME))) continue;
+    already.add(normName(it.NAME));
+    const r = { ALLERGENS: '', STORAGE: '', ...it, include: true };
+    markExisting(r);
+    bulk.push(r);
+  }
+  renderBulk();
+}
+
+function addTyped() {
+  const box = bulkDlg.querySelector('[data-bulk-text]');
+  const items = box.value.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(line => {
+    const [name, cat = ''] = line.split(/\s*[,\t]\s*/);
+    const category = cat || 'Other';
+    return { NAME: name.charAt(0).toUpperCase() + name.slice(1), CATEGORY: category, UNIT: guessUnit(name, category) };
+  });
+  if (!items.length) { toast('Type at least one name.', 'error'); return; }
+  addBulkRows(items);
+  box.value = '';
+}
+
+function renderBulk() {
+  const host = bulkDlg.querySelector('[data-bulk-rows]');
+  const groups = new Map();
+  bulk.forEach((r, i) => {
+    if (!groups.has(r.CATEGORY)) groups.set(r.CATEGORY, []);
+    groups.get(r.CATEGORY).push([r, i]);
+  });
+  host.innerHTML = [...groups].map(([cat, items]) => {
+    const open = items.filter(([r]) => !r.exists);
+    const allOn = open.length && open.every(([r]) => r.include);
+    return `
+      <section class="bulk-group">
+        <label class="bulk-cat"><input type="checkbox" data-cat-toggle="${esc(cat)}"${allOn ? ' checked' : ''}${open.length ? '' : ' disabled'}>
+          <span>${esc(cat)}</span><small>${items.filter(([r]) => r.include).length} of ${items.length}</small></label>
+        ${items.map(([r, i]) => `
+          <div class="bulk-row${r.include ? '' : ' off'}" data-b="${i}">
+            <input type="checkbox" data-f="include"${r.include ? ' checked' : ''}${r.exists ? ' disabled' : ''} aria-label="Add ${esc(r.NAME)}">
+            <span class="bulk-name">
+              <input type="text" data-f="name" value="${esc(r.NAME)}" aria-label="Name">
+              ${r.exists ? '<small class="muted">Already in your ingredients</small>'
+                : r.ALLERGENS ? `<small class="bulk-allergens">${esc(r.ALLERGENS)}</small>` : ''}
+            </span>
+            <select data-f="unit" aria-label="Measured by">${['g', 'ml', 'each'].map(u => `<option${u === r.UNIT ? ' selected' : ''}>${u}</option>`).join('')}</select>
+          </div>`).join('')}
+      </section>`;
+  }).join('');
+  const n = bulk.filter(r => r.include).length;
+  const existing = bulk.filter(r => r.exists).length;
+  bulkDlg.querySelector('[data-bulk-summary]').textContent = bulk.length
+    ? `${n} of ${bulk.length} selected${existing ? ` · ${existing} already in your ingredients` : ''}`
+    : '';
+  const btn = bulkDlg.querySelector('[data-act="save"]');
+  btn.disabled = !n;
+  btn.textContent = n ? `Add ${n} ingredient${n === 1 ? '' : 's'}` : 'Add ingredients';
+}
+
+async function saveBulk() {
+  bulk.forEach(markExisting);
+  const chosen = bulk.filter(r => r.include && !r.exists);
+  if (!chosen.length) { renderBulk(); return; }
+  const btn = bulkDlg.querySelector('[data-act="save"]');
+  btn.disabled = true;
+  btn.textContent = 'Adding…';
+  try {
+    await store.createMany('INGREDIENTS', chosen.map(r => ({
+      NAME: r.NAME, CATEGORY: r.CATEGORY === 'Other' ? '' : r.CATEGORY, UNIT: r.UNIT, ALLERGENS: r.ALLERGENS,
+      STORAGE: r.STORAGE, 'YIELD_%': 100, ACTIVE: true,
+    })));
+    bulk = [];
+    bulkDlg.close();
+    toast(`Added ${chosen.length} ingredient${chosen.length === 1 ? '' : 's'}. Link them to suppliers to price them.`);
+    if (root?.isConnected) render(root);
+  } catch (err) {
+    reportError(err);
+    renderBulk();
+  }
 }
