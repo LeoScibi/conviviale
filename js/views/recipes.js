@@ -146,7 +146,11 @@ function openRecipeForm(rec) {
   const isNew = !rec;
   formDialog({
     title: isNew ? 'New recipe' : `Edit ${rec.NAME}`,
-    fields: recipeFields(),
+    fields: isNew ? [...recipeFields(), {
+      name: 'INGREDIENT_LIST', label: 'Ingredients (optional)', type: 'textarea', rows: 6, wide: true,
+      placeholder: '200 g celery\n300 g white onion\n1 l chicken stock',
+      hint: 'Paste one per line. You\u2019ll check the matches before anything is added.',
+    }] : recipeFields(),
     values: rec || { TYPE: state.type || 'dish', PORTIONS: 1 },
     submitLabel: isNew ? 'Create recipe' : 'Save changes',
     onSubmit: async d => {
@@ -159,8 +163,10 @@ function openRecipeForm(rec) {
         throw new Error('A sub-recipe needs a batch yield or a number of portions, so other recipes can use it.');
       }
       if (isNew) {
-        const id = await store.create('RECIPES', d);
+        const { INGREDIENT_LIST: list, ...recipe } = d;
+        const id = await store.create('RECIPES', recipe);
         toast(`Created ${d.NAME}`);
+        pendingPaste = list?.trim() ? list : null;
         location.hash = `#/recipes/${encodeURIComponent(id)}`;
       } else {
         await store.update('RECIPES', rec.RECIPE_ID, d);
@@ -175,6 +181,7 @@ function openRecipeForm(rec) {
 // ============================================================ recipe detail
 
 const ds = { id: null, open: null, swap: null, swapQ: '', add: emptyAdd(), scaleTo: '', busy: false };
+let pendingPaste = null; // ingredient list typed into the New recipe form, read once it opens
 let dlg = null;
 
 function emptyAdd() { return { q: '', pick: null, qty: '', unit: '' }; }
@@ -223,6 +230,11 @@ export function openDetail(id) {
   parkToasts();
   renderDetail();
   dlg.querySelector('.modal-body').scrollTop = 0;
+  if (pendingPaste) {
+    const text = pendingPaste;
+    pendingPaste = null;
+    openPaste(text);
+  }
 }
 
 function closeDetail() {
@@ -465,7 +477,8 @@ function addLineHtml(coster) {
       <label class="search-wrap">${icons.search}
         <input type="search" class="search" data-add-q value="${esc(a.q)}" placeholder="Add ingredient or sub-recipe" autocomplete="off" aria-label="Add ingredient or sub-recipe">
       </label>
-      <div class="results" data-results>${resultsHtml(a.q)}</div>`;
+      <div class="results" data-results>${resultsHtml(a.q)}</div>
+      <button type="button" class="btn sm paste-inline" data-act="paste">Paste a list of ingredients</button>`;
   }
   const item = a.pick.type === 'SUB' ? store.byId('RECIPES', a.pick.id) : store.byId('INGREDIENTS', a.pick.id);
   const lc = {
@@ -765,16 +778,18 @@ function confirmDiscardPaste() {
   return !dirty || confirm('Discard this pasted list?');
 }
 
-function openPaste() {
+/** Open the importer; with `text`, it's read straight away (from the New recipe form). */
+function openPaste(text = '') {
   ensurePasteDialog();
   parsed = [];
-  pasteDlg.querySelector('[data-paste-text]').value = '';
+  pasteDlg.querySelector('[data-paste-text]').value = text;
   pasteDlg.querySelector('#paste-ingredients').innerHTML =
     store.rows('INGREDIENTS').filter(i => i.ACTIVE).map(i => `<option value="${esc(i.NAME)}">`).join('');
+  if (text) parsed = parseRecipeText(text, store.rows('INGREDIENTS').filter(i => i.ACTIVE));
   renderPasteRows();
   pasteDlg.showModal();
   parkToasts();
-  pasteDlg.querySelector('[data-paste-text]').focus();
+  if (!text) pasteDlg.querySelector('[data-paste-text]').focus();
 }
 
 function pasteRowCost(p) {

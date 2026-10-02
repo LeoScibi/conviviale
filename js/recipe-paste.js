@@ -37,17 +37,55 @@ const singular = w => (w.endsWith('es') && w.length > 4) ? w.slice(0, -2)
 const stem = w => { const s1 = singular(w); return s1.length > 4 ? s1.replace(/[io]$/, '') : s1; };
 export const nameTokens = s => normName(s).split(' ').filter(Boolean).map(stem);
 
-/** How well `name` matches an ingredient name (0 = no shared words; ≥ 0.9 counts as a match). */
+/** Edit distance, for typos ("rosmary" → "rosemary"). */
+function lev(a, b) {
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/** Same word, allowing one typo in words of 5+ letters and two in words of 10+ ("chicken" ≠ "chickpea"). */
+function sameWord(a, b) {
+  if (a === b) return true;
+  const n = Math.max(a.length, b.length);
+  return n >= 5 && a[0] === b[0] && Math.abs(a.length - b.length) <= 2 && lev(a, b) <= (n >= 10 ? 2 : 1);
+}
+
+const ingTokens = s => nameTokens(String(s).replace(/\(.*?\)/g, ' '));
+
+/**
+ * Score how well a typed name ("white onion", "rosmary", "pepper corns") fits an ingredient.
+ *  - the ingredient's main word (its last: "Red wine vinegar" → vinegar) must be there, so
+ *    "red wine" picks House red wine over Red wine vinegar;
+ *  - if both sides have words the other lacks ("coriander seeds" vs "Fennel seeds"), they're
+ *    different things; one side being more specific is fine ("white onion" → Onions);
+ *  - words run together count too: "pepper corns" → Black peppercorns.
+ */
 export function matchScore(name, ingName) {
   const nt = nameTokens(name);
-  const it = nameTokens(ingName);
+  const it = ingTokens(ingName);
   if (!nt.length || !it.length) return 0;
-  const overlap = nt.filter(t => it.includes(t)).length;
-  if (!overlap) return 0;
+  const hit = (t, list) => list.some(u => sameWord(t, u));
+  const overlap = nt.filter(t => hit(t, it)).length;
+  if (!overlap) {
+    const cn = nt.join('');
+    const ci = it.join('');
+    return cn.length >= 6 && (ci.includes(cn) || cn.includes(ci)) ? 1.2 : 0;
+  }
+  // Main word missing: only OK for a single word naming an Italian-style "noun first" ingredient
+  // ("parmigiano" → Parmigiano Reggiano, "mozzarella" → Mozzarella di bufala).
+  if (!hit(it[it.length - 1], nt) && !(nt.length === 1 && sameWord(nt[0], it[0]))) return 0;
+  const extraTyped = nt.length - overlap;
+  const extraIng = it.filter(u => !hit(u, nt)).length;
+  if (extraTyped && extraIng) return 0;
   return overlap / it.length + overlap / nt.length + (normName(ingName) === normName(name) ? 1 : 0);
 }
 
-/** Best-scoring ingredient for `name`: { ing, score }, or null below the threshold. */
+/** Best-scoring ingredient for `name`: { ing, score }, or null if nothing fits. */
 export function bestMatch(name, ingredients) {
   let best = null;
   for (const ing of ingredients) {
@@ -130,6 +168,9 @@ function looksLikeIngredient(p, raw) {
   return true;
 }
 
+// Unit → [the other family, its equivalent unit] for the 1 g = 1 ml swap.
+const LIQUID_SWAP = { g: ['volume', 'ml', 1], kg: ['volume', 'L', 1], ml: ['weight', 'g', 1], cl: ['weight', 'g', 10], L: ['weight', 'kg', 1] };
+
 /**
  * One row per pasted line:
  * { raw, name, ingId (null = create new), family, unit, qty, include, note }
@@ -147,6 +188,11 @@ export function parseRecipeText(text, ingredients) {
       if (cookFamilies.includes(family)) {
         unit = p.cook[1];
         qty = p.qty != null ? +(p.qty * p.cook[2]).toFixed(2) : null;
+      } else if (LIQUID_SWAP[p.cook[1]] && LIQUID_SWAP[p.cook[1]][0] === family) {
+        // Weight for a liquid or volume for a solid ("400 g red wine"): close enough at 1 g = 1 ml.
+        unit = LIQUID_SWAP[p.cook[1]][1];
+        qty = p.qty != null ? +(p.qty * p.cook[2] * LIQUID_SWAP[p.cook[1]][2]).toFixed(2) : null;
+        note = `Converted ${p.unitRaw} to ${unit} at 1 g = 1 ml. Check it's right for ${match ? match.NAME : 'this'}.`;
       } else {
         note = `“${p.unitRaw}” doesn't fit how ${match ? match.NAME : 'this'} is bought. Check the quantity.`;
       }

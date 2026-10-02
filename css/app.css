@@ -367,6 +367,7 @@ fieldset.field legend { padding: 0; margin-bottom: 8px; }
 .hint.warn { color: var(--amber); }
 
 .add-line { margin-top: 10px; display: grid; gap: 6px; }
+.paste-inline { justify-self: start; }
 .results { display: grid; gap: 4px; }
 .results:empty { display: none; }
 .result {
