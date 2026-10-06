@@ -33,7 +33,6 @@ export async function init() {
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: CONFIG.CLIENT_ID,
     scope: CONFIG.SCOPES,
-    hd: CONFIG.ALLOWED_DOMAIN,
     callback: onToken,
     error_callback: onError,
   });
@@ -118,7 +117,9 @@ export async function fetchUser() {
 
 export function isAllowed(user) {
   const email = String(user?.email || '').toLowerCase();
-  return user?.email_verified !== false && email.endsWith('@' + CONFIG.ALLOWED_DOMAIN);
+  if (user?.email_verified === false) return false;
+  return email.endsWith('@' + CONFIG.ALLOWED_DOMAIN)
+    || (CONFIG.ALLOWED_EMAILS || []).some(e => e.trim().toLowerCase() === email);
 }
 
 export function rememberHint(email) {

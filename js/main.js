@@ -56,7 +56,7 @@ async function start() {
     const user = await auth.fetchUser();
     if (!auth.isAllowed(user)) {
       auth.signOut({ revoke: true });
-      showSignin(`You signed in as ${user.email}. Please use your @${CONFIG.ALLOWED_DOMAIN} account.`);
+      showSignin(`You signed in as ${user.email}. Use your @${CONFIG.ALLOWED_DOMAIN} account, or ask to have this address added.`);
       return;
     }
     auth.rememberHint(user.email);

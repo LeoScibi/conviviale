@@ -12,7 +12,8 @@ Data lives in a Google Sheet, read and written directly from the browser with th
    - `http://localhost:8000` (local dev)
 2. **Sheets API** must be enabled in the same Cloud project.
 3. **Consent screen**: set user type to *Internal* so only @conviviale.co.uk accounts can sign in.
-   The app also checks the domain after sign-in, but that check is a courtesy, not security.
+   The app also checks the address after sign-in (`ALLOWED_DOMAIN` plus the named outside
+   addresses in `ALLOWED_EMAILS`, both in `js/config.js`), but that check is a courtesy, not security.
    Real access control is who the spreadsheet is shared with.
 4. **Share the spreadsheet** (edit access) with staff who should use the app.
 

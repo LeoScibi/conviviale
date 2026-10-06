@@ -3,7 +3,13 @@
 export const CONFIG = {
   CLIENT_ID: '415763317088-9hono52p2lh79eqqh1hsnssmksi7f1us.apps.googleusercontent.com',
   SPREADSHEET_ID: '1R0x7EhJSJffsopRgyzQKLFNUleFYEkDDxRmlmxh6ZE0',
+  // Who the app lets in after Google sign-in: anyone on ALLOWED_DOMAIN, plus the named outside
+  // addresses below (one per person, lower case). This is a courtesy check; real access is the
+  // Google consent screen's user list and who the spreadsheet is shared with.
   ALLOWED_DOMAIN: 'conviviale.co.uk',
+  ALLOWED_EMAILS: [
+    'cat@thethirstycat.co.uk',
+  ],
   // Sheets access, plus openid/email so we can check the signed-in account's domain.
   SHEETS_SCOPE: 'https://www.googleapis.com/auth/spreadsheets',
   SCOPES: 'https://www.googleapis.com/auth/spreadsheets openid email profile',
