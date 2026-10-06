@@ -445,6 +445,21 @@ fieldset.field legend { padding: 0; margin-bottom: 8px; }
 .bulk-row select { min-height: 40px; padding: 6px 28px 6px 10px; }
 .bulk-allergens { color: var(--amber); font-size: 11px; font-weight: 600; }
 
+/* ---------- Menus ---------- */
+.menu-sheet .head-text { min-width: 0; }
+.menu-add { display: grid; grid-template-columns: 1fr 92px auto; gap: 8px; align-items: center; margin-top: 10px; }
+.menu-add .unit { font-size: 13px; color: var(--muted); min-width: 52px; }
+.menu-add .btn { grid-column: 1 / -1; }
+.menu-line { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 10px; padding: 8px 8px 8px 12px; min-height: 56px; }
+.shop-group { margin-top: 14px; }
+.shop-group h4 { margin: 0 0 2px; font-family: var(--display); text-transform: uppercase; letter-spacing: .14em; font-size: 12px; font-weight: 400; color: var(--olive); }
+.shop-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.menu-sheet .modal-foot { flex-wrap: wrap; }
+@media (min-width: 820px) {
+  .menu-add { grid-template-columns: 1fr 110px auto auto; }
+  .menu-add .btn { grid-column: auto; }
+}
+
 /* ---------- Toasts ---------- */
 .toasts {
   position: fixed; z-index: 100; left: 16px; right: 16px; bottom: calc(var(--bottombar-h) + var(--safe-b) + 86px);

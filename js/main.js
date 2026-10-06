@@ -7,8 +7,9 @@ import { migrateToPriceLists } from './migrate.js';
 import * as ingredients from './views/ingredients.js';
 import * as suppliers from './views/suppliers.js';
 import * as recipes from './views/recipes.js';
+import * as menus from './views/menus.js';
 
-const ROUTES = { ingredients, suppliers, recipes };
+const ROUTES = { ingredients, suppliers, recipes, menus };
 const DEFAULT_ROUTE = 'ingredients';
 
 const $ = sel => document.querySelector(sel);

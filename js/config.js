@@ -57,6 +57,19 @@ export const SCHEMA = {
     headers: ['RECIPE_ID', 'ITEM_TYPE', 'ITEM_ID', 'QTY', 'UNIT', 'LINE_ID', 'SORT'],
     numbers: ['QTY', 'SORT'],
   },
+  // A menu is a named list of recipes and how much of each an event or service needs. UNIT is
+  // `portion` or a weight / volume unit of the recipe's batch yield. The shopping list is derived.
+  MENUS: {
+    idField: 'MENU_ID',
+    idPrefix: 'MENU',
+    headers: ['MENU_ID', 'NAME', 'NOTES'],
+  },
+  MENU_LINES: {
+    idField: 'LINE_ID',
+    idPrefix: 'ML',
+    headers: ['LINE_ID', 'MENU_ID', 'RECIPE_ID', 'QTY', 'UNIT'],
+    numbers: ['QTY'],
+  },
 };
 
 export const RECIPE_TYPES = [['dish', 'Dish'], ['drink', 'Drink'], ['sub', 'Sub-recipe']];

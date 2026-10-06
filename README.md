@@ -1,6 +1,6 @@
 # Conviviale Ops
 
-Food cost, recipe management and (later) inventory for Conviviale wine bar.
+Food cost, recipes, menus and (later) inventory for Conviviale wine bar.
 Static single-page app: plain HTML/CSS/JS, no build step, served from the repo root on GitHub Pages.
 Data lives in a Google Sheet, read and written directly from the browser with the Sheets API v4.
 
@@ -102,10 +102,15 @@ full-screen forms. It can be added to the home screen and opens like an app.
   batch yield) or by `portion` (needs PORTIONS). A sub-recipe that would loop back into the
   recipe can't be added.
 - GP% is on the net price: SELL_PRICE is inc VAT, VAT_RATE defaults to 20% and TARGET_GP% to 70%.
+- A menu (MENUS + MENU_LINES) is a named list of recipes and how much of each is needed, in
+  portions or by the recipe's batch yield. Its food cost and shopping list are derived: sub-recipes
+  are expanded to raw ingredients, quantities are combined, and yield is added back so the list
+  says how much to buy. Ported from Carisma Ops; `js/views/menus.js` differs only in a placeholder and two robustness fixes.
 
 ## Roadmap
 
 - **Phase 1 (done):** auth, Sheets wrapper, tab setup, suppliers and ingredients (list, search, add, edit).
 - **Phase 2 (done):** recipe builder: cost per portion, GP% vs target, allergens rolled up through sub-recipes,
   scaling, paste importer. Wine by the glass is a drink recipe using a bottle ingredient (e.g. 175 ml of a 750 ml bottle).
+- **Menus (done):** menu builder with estimated food cost and a combined shopping list.
 - **Phase 3:** inventory: stock counts, deliveries, waste.
