@@ -10,5 +10,6 @@ export const icons = {
   truck: svg('<path d="M3 6h11v10H3zM14 10h4l3 3v3h-7"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>'),
   up: svg('<path d="m6 15 6-6 6 6"/>'),
   down: svg('<path d="m6 9 6 6 6-6"/>'),
+  glass: svg('<path d="M7 3h10l-.5 6a4.5 4.5 0 0 1-9 0zM12 13.5V21M8.5 21h7M6.8 8h10.4"/>'),
   clock: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
 };

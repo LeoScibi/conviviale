@@ -11,6 +11,7 @@ import {
 } from '../costing.js';
 import { openPriceForm, pricesSectionHtml, historyHtml, supplierName } from './prices.js';
 import { parseWineList, wineKey } from '../wine-paste.js';
+import { photoFor, savePhoto, fileToPhoto } from '../photos.js';
 
 const BOTTLE_UNIT_OPTIONS = [['cl', 'cl'], ['ml', 'ml'], ['L', 'L']];
 const GLASS_ML = 125;
@@ -117,9 +118,12 @@ function renderList() {
     const sup = p ? esc(supplierName(p.SUPPLIER_ID)) : '';
     const sub = [esc(w.PRODUCER), esc(w.REGION)].filter(Boolean).join(' · ') || 'No producer';
     const glass = ingredientUnit(w) === 'ml' ? usableUnitCost(w) : null;
+    const photo = photoFor(w.ING_ID);
     return `
-    <article class="card${w.ACTIVE ? '' : ' inactive'}">
+    <article class="card wine-card${w.ACTIVE ? '' : ' inactive'}">
       <button class="card-hit" data-id="${esc(w.ING_ID)}" aria-label="Edit ${esc(displayName(w))}"></button>
+      <span class="wine-thumb">${photo ? `<img src="${photo}" alt="" loading="lazy">` : icons.glass}</span>
+      <div class="wine-card-body">
       <div class="card-top">
         <div>
           <div class="card-name">${esc(displayName(w))}${w.ACTIVE ? '' : ' <span class="tag">Inactive</span>'}${
@@ -135,6 +139,7 @@ function renderList() {
         ${w.GRAPE ? `<span>${esc(w.GRAPE)}</span>` : ''}
       </div>
       ${w.STYLE ? `<div class="tags"><span class="tag">${esc(w.STYLE)}</span></div>` : ''}
+      </div>
     </article>`;
   }).join('')}</div>`;
 }
@@ -186,6 +191,25 @@ export function openForm(wine, { onSaved } = {}) {
     onSaved?.(wine.ING_ID);
   };
 
+  // The photo is only written when the form is saved; `undefined` means it hasn't been touched.
+  let newPhoto;
+  const photoHtml = src => `
+    <span class="wine-thumb lg">${src ? `<img src="${src}" alt="Photo of this wine">` : icons.glass}</span>
+    <div class="photo-actions">
+      <label class="btn sm"><input type="file" accept="image/*" data-photo-file hidden>${src ? 'Change photo' : 'Add photo'}</label>
+      ${src ? '<button type="button" class="btn sm" data-photo-remove>Remove</button>' : ''}
+      <small class="hint">Take one with the camera or pick one. It's saved as a small picture.</small>
+    </div>`;
+  const writePhoto = async (id, name) => {
+    if (newPhoto === undefined) return;
+    try {
+      await savePhoto(id, newPhoto);
+    } catch (err) {
+      console.error(err);
+      toast(`Saved ${name}, but its photo wasn't: ${err.message}`, 'error');
+    }
+  };
+
   const glassHtml = (perMl, from = '') => `<strong>${money(perMl * GLASS_ML)}</strong> per ${GLASS_ML} ml glass · ${formatUnitCost(perMl, 'ml')}${from}`;
 
   formDialog({
@@ -193,9 +217,26 @@ export function openForm(wine, { onSaved } = {}) {
     fields,
     values: wine || { ACTIVE: true, ALLERGENS: 'Sulphites', P_SIZE: 75, P_UNIT: 'cl' },
     submitLabel: isNew ? 'Add wine' : 'Save changes',
-    extraHtml: `<p class="cost-preview" data-preview aria-live="polite"></p>${
+    extraHtml: `<section class="photo-field" data-photo>${photoHtml(isNew ? '' : photoFor(wine.ING_ID))}</section>
+      <p class="cost-preview" data-preview aria-live="polite"></p>${
       isNew ? '' : `<section class="prices" data-prices>${pricesSectionHtml(wine)}</section>${historyHtml(wine.ING_ID)}`}`,
     onOpen: dlg => {
+      const photoHost = dlg.querySelector('[data-photo]');
+      photoHost.addEventListener('change', async e => {
+        const file = e.target.matches('[data-photo-file]') && e.target.files[0];
+        if (!file) return;
+        try {
+          newPhoto = await fileToPhoto(file);
+          photoHost.innerHTML = photoHtml(newPhoto);
+        } catch (err) {
+          reportError(err);
+        }
+      });
+      photoHost.addEventListener('click', e => {
+        if (!e.target.closest('[data-photo-remove]')) return;
+        newPhoto = '';
+        photoHost.innerHTML = photoHtml('');
+      });
       dlg.querySelector('[data-prices]')?.addEventListener('click', e => {
         if (e.target.closest('[data-add-price]')) {
           openPriceForm({ ingId: wine.ING_ID, onSaved: () => refreshPrices(dlg) });
@@ -243,6 +284,7 @@ export function openForm(wine, { onSaved } = {}) {
 
       if (!isNew) {
         await store.update('INGREDIENTS', wine.ING_ID, { ...base, SUPPLIER_ID: d.SUPPLIER_ID });
+        await writePhoto(wine.ING_ID, d.NAME);
         toast(`Saved ${d.NAME}`);
         if (root?.isConnected) renderList();
         onSaved?.(wine.ING_ID);
@@ -273,6 +315,7 @@ export function openForm(wine, { onSaved } = {}) {
           toast(`Added ${d.NAME}, but its price wasn't saved: ${err.message}`, 'error');
         }
       }
+      await writePhoto(id, d.NAME);
       toast(`Added ${d.NAME}`);
       if (root?.isConnected) render(root);
       onSaved?.(id);

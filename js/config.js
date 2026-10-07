@@ -79,6 +79,12 @@ export const SCHEMA = {
     headers: ['LINE_ID', 'MENU_ID', 'RECIPE_ID', 'QTY', 'UNIT'],
     numbers: ['QTY'],
   },
+  // A small photo per item (wines for now), kept as a JPEG data URL in IMAGE. See js/photos.js.
+  PHOTOS: {
+    idField: 'PHOTO_ID',
+    idPrefix: 'PH',
+    headers: ['PHOTO_ID', 'ING_ID', 'IMAGE', 'UPDATED'],
+  },
 };
 
 export const RECIPE_TYPES = [['dish', 'Dish'], ['drink', 'Drink'], ['sub', 'Sub-recipe']];
