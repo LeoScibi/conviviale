@@ -4,12 +4,13 @@
 import * as store from '../store.js';
 import { ALLERGENS, WINE_KIND, WINE_CATEGORY, WINE_STYLES } from '../config.js';
 import { icons } from '../icons.js';
-import { esc, money, formDialog, toast, reportError, byName, sameName, matches, option } from '../ui.js';
+import { esc, money, formDialog, toast, reportError, parkToasts, byName, sameName, matches, option } from '../ui.js';
 import {
   normalisePack, priceUnitCost, pricesFor, chosenPrice, ingredientUnit, usableUnitCost, formatUnitCost, packLabel,
   isWine, displayName,
 } from '../costing.js';
 import { openPriceForm, pricesSectionHtml, historyHtml, supplierName } from './prices.js';
+import { parseWineList, wineKey } from '../wine-paste.js';
 
 const BOTTLE_UNIT_OPTIONS = [['cl', 'cl'], ['ml', 'ml'], ['L', 'L']];
 const GLASS_ML = 125;
@@ -35,7 +36,10 @@ export function render(el) {
         <p class="overline" data-count></p>
         <h1 class="title">Wines</h1>
       </div>
-      <button class="btn primary add-desktop" data-add>${icons.plus} Add wine</button>
+      <div class="head-actions">
+        <button class="btn sm" data-bulk>Add many</button>
+        <button class="btn primary add-desktop" data-add>${icons.plus} Add wine</button>
+      </div>
     </div>
     <div class="toolbar">
       <label class="search-wrap">${icons.search}
@@ -64,6 +68,7 @@ export function render(el) {
   el.querySelector('[data-sup]').addEventListener('change', e => { state.supplier = e.target.value; renderList(); });
   el.querySelector('[data-inactive]').addEventListener('change', e => { state.inactive = e.target.checked; renderList(); });
   el.querySelectorAll('[data-add]').forEach(b => b.addEventListener('click', () => openForm(null)));
+  el.querySelector('[data-bulk]').addEventListener('click', openBulk);
   el.querySelector('[data-move]')?.addEventListener('click', moveStrays);
   el.querySelector('[data-list]').addEventListener('click', e => {
     const hit = e.target.closest('.card-hit');
@@ -221,12 +226,13 @@ export function openForm(wine, { onSaved } = {}) {
       el.innerHTML = ingredientUnit(live) === 'ml' ? glassHtml(cost, from) : `<strong>${formatUnitCost(cost, ingredientUnit(live))}</strong>${from}`;
     },
     onSubmit: async d => {
-      // The same wine can be listed in several vintages; anything else must have its own name.
-      const clash = store.rows('INGREDIENTS').find(i => i.ING_ID !== wine?.ING_ID && sameName(i.NAME, d.NAME)
-        && (!isWine(i) || sameName(i.VINTAGE, d.VINTAGE)));
+      // The same wine can be listed in several vintages, and two producers can share a name
+      // ("Morgon"); an ingredient of that name would be ambiguous in recipes.
+      const clash = store.rows('INGREDIENTS').find(i => i.ING_ID !== wine?.ING_ID
+        && (isWine(i) ? wineKey(i) === wineKey(d) : sameName(i.NAME, d.NAME)));
       if (clash) {
         throw new Error(isWine(clash)
-          ? `${displayName(clash)} is already on the list (${clash.ING_ID}). Give this one a different vintage.`
+          ? `${displayName(clash)} is already on the list (${clash.ING_ID}). Give this one a different vintage or producer.`
           : `An ingredient called “${clash.NAME}” already exists (${clash.ING_ID}).`);
       }
 
@@ -272,4 +278,173 @@ export function openForm(wine, { onSaved } = {}) {
       onSaved?.(id);
     },
   });
+}
+
+// ============================================================ add many
+
+let bulkDlg = null;
+let bulk = []; // parsed lines plus { include, exists }
+
+function ensureBulkDialog() {
+  if (bulkDlg) return;
+  bulkDlg = document.createElement('dialog');
+  bulkDlg.className = 'modal paste-sheet bulk-sheet';
+  bulkDlg.innerHTML = `
+    <div class="modal-form">
+      <header class="modal-head">
+        <h2>Add many wines</h2>
+        <button type="button" class="icon-btn" data-act="close" aria-label="Close">&times;</button>
+      </header>
+      <div class="modal-body">
+        <p class="muted small">Paste your wine list from a spreadsheet, one wine per line: <i>Producer - Wine Vintage</i>, then optionally the style and the bottle price (ex VAT) in the next columns. Bottles are taken as 75 cl unless the line ends in a size (<i>3L</i>, <i>37.5cl</i>).</p>
+        <textarea data-wb-text rows="7" placeholder="${esc('Marcel Lapierre - Morgon 2024\tRed\t£20.95\nBérèche & Fils - Réserve NV\tSparkling\t£37.45')}"></textarea>
+        <label class="field"><span>Supplier for these prices</span>
+          <select data-wb-sup></select>
+          <small class="hint">Prices are saved on this supplier's price list. Without one, the wines are added with no price.</small>
+        </label>
+        <input type="text" data-pp-ref data-wb-ref placeholder="Invoice or price list ref (optional)" aria-label="Invoice or price list reference">
+        <button type="button" class="btn block" data-act="parse">Read the list</button>
+        <p class="small muted paste-summary" data-wb-summary></p>
+        <div data-wb-rows></div>
+      </div>
+      <footer class="modal-foot">
+        <button type="button" class="btn" data-act="close">Cancel</button>
+        <button type="button" class="btn primary" data-act="save" disabled>Add wines</button>
+      </footer>
+    </div>`;
+  document.body.append(bulkDlg);
+  bulkDlg.addEventListener('close', parkToasts);
+  bulkDlg.addEventListener('cancel', e => { if (!confirmBulkDiscard()) e.preventDefault(); });
+  bulkDlg.addEventListener('click', e => {
+    const act = e.target.closest('[data-act]')?.dataset.act;
+    if (act === 'close') { if (confirmBulkDiscard()) bulkDlg.close(); } else if (act === 'parse') readBulk();
+    else if (act === 'save') saveBulk();
+  });
+  bulkDlg.addEventListener('change', e => {
+    const t = e.target;
+    if (t.matches('[data-wb-sup]')) { renderBulk(); return; }
+    const row = t.closest('[data-b]');
+    if (!row) return;
+    const r = bulk[Number(row.dataset.b)];
+    if (t.matches('[data-f=include]')) r.include = t.checked;
+    if (t.matches('[data-f=style]')) r.style = t.value;
+    renderBulk();
+  });
+}
+
+function confirmBulkDiscard() {
+  const dirty = bulk.some(r => r.include) || bulkDlg.querySelector('[data-wb-text]').value.trim();
+  return !dirty || confirm('Discard this list without adding anything?');
+}
+
+function openBulk() {
+  ensureBulkDialog();
+  bulk = [];
+  bulkDlg.querySelector('[data-wb-text]').value = '';
+  bulkDlg.querySelector('[data-wb-ref]').value = '';
+  bulkDlg.querySelector('[data-wb-sup]').innerHTML = `<option value="">No supplier (add prices later)</option>${
+    store.rows('SUPPLIERS').slice().sort(byName).map(s => option(s.SUPPLIER_ID, s.NAME, '')).join('')}`;
+  renderBulk();
+  bulkDlg.showModal();
+  parkToasts();
+  bulkDlg.querySelector('[data-wb-text]').focus();
+}
+
+const bulkKey = r => wineKey({ NAME: r.name, VINTAGE: r.vintage, PRODUCER: r.producer });
+
+/** Flag lines already on the wine list, repeated in the paste, or named like an ingredient. */
+function markBulk() {
+  const all = store.rows('INGREDIENTS');
+  const taken = new Set(all.filter(isWine).map(wineKey));
+  const ingredientNames = all.filter(i => !isWine(i)).map(i => i.NAME);
+  const seen = new Set();
+  for (const r of bulk) {
+    const k = bulkKey(r);
+    r.exists = taken.has(k) ? 'Already on your wine list'
+      : seen.has(k) ? 'Repeated in this list'
+        : ingredientNames.some(n => sameName(n, r.name)) ? 'An ingredient already has this name' : '';
+    seen.add(k);
+    if (r.exists) r.include = false;
+  }
+}
+
+function readBulk() {
+  const text = bulkDlg.querySelector('[data-wb-text]').value;
+  if (!text.trim()) { toast('Paste a wine list first.', 'error'); return; }
+  bulk = parseWineList(text).map(r => ({ ...r, include: true }));
+  if (!bulk.length) toast('No wines found. Put one wine on each line.', 'error');
+  markBulk();
+  renderBulk();
+}
+
+function renderBulk() {
+  const styles = [...new Set([...WINE_STYLES, ...bulk.map(r => r.style).filter(Boolean)])];
+  bulkDlg.querySelector('[data-wb-rows]').innerHTML = bulk.map((r, i) => {
+    const label = [r.name, r.vintage].filter(Boolean).join(' ');
+    const sub = [r.producer, packLabel(r.size, 'ml'), r.price == null ? 'no price' : money(r.price)].filter(Boolean).map(esc).join(' · ');
+    return `
+      <div class="bulk-row wine-bulk-row${r.include ? '' : ' off'}" data-b="${i}">
+        <input type="checkbox" data-f="include"${r.include ? ' checked' : ''}${r.exists ? ' disabled' : ''} aria-label="Add ${esc(label)}">
+        <span class="bulk-name">
+          <b>${esc(label)}</b>
+          <small class="muted">${sub}</small>
+          ${r.exists ? `<small class="warn">${esc(r.exists)}</small>` : ''}
+        </span>
+        <select data-f="style" aria-label="Style"><option value="">Style…</option>${styles.map(s => option(s, s, r.style)).join('')}</select>
+      </div>`;
+  }).join('');
+
+  const chosen = bulk.filter(r => r.include);
+  const priced = chosen.filter(r => r.price != null).length;
+  const skipped = bulk.filter(r => r.exists).length;
+  const hasSupplier = !!bulkDlg.querySelector('[data-wb-sup]').value;
+  bulkDlg.querySelector('[data-wb-summary]').textContent = bulk.length
+    ? `${bulk.length} wine${bulk.length === 1 ? '' : 's'} read · ${chosen.length} selected${skipped ? ` · ${skipped} skipped` : ''}${
+      priced ? (hasSupplier ? ` · ${priced} with a price` : ` · choose a supplier to save the ${priced} price${priced === 1 ? '' : 's'}`) : ''}`
+    : '';
+  const btn = bulkDlg.querySelector('[data-act="save"]');
+  btn.disabled = !chosen.length;
+  btn.textContent = chosen.length ? `Add ${chosen.length} wine${chosen.length === 1 ? '' : 's'}` : 'Add wines';
+}
+
+async function saveBulk() {
+  markBulk();
+  const chosen = bulk.filter(r => r.include && !r.exists);
+  if (!chosen.length) { renderBulk(); return; }
+  const supplier = bulkDlg.querySelector('[data-wb-sup]').value;
+  const priced = chosen.filter(r => r.price != null);
+  if (priced.length && !supplier
+    && !confirm(`No supplier chosen, so the ${priced.length} price${priced.length === 1 ? '' : 's'} in this list won't be saved. Add the wines without prices?`)) return;
+  const ref = bulkDlg.querySelector('[data-wb-ref]').value.trim();
+  const btn = bulkDlg.querySelector('[data-act="save"]');
+  btn.disabled = true;
+  btn.textContent = 'Adding…';
+  try {
+    const ids = await store.createMany('INGREDIENTS', chosen.map(r => ({
+      NAME: r.name, PRODUCER: r.producer, VINTAGE: r.vintage, STYLE: r.style, KIND: WINE_KIND, CATEGORY: WINE_CATEGORY,
+      UNIT: 'ml', 'YIELD_%': 100, STORAGE: 'Cellar', ALLERGENS: 'Sulphites', ACTIVE: true,
+    })));
+    // Saved wines mustn't be added again if the prices fail and Add is pressed a second time.
+    chosen.forEach((r, i) => { r.id = ids[i]; r.include = false; });
+    let saved = 0;
+    if (supplier && priced.length) {
+      const now = store.today();
+      const priceIds = await store.createMany('SUPPLIER_PRICES', priced.map(r => ({
+        SUPPLIER_ID: supplier, ING_ID: r.id, PRODUCT_NAME: r.raw.split('\t')[0].trim(), PACK_SIZE: r.size, PACK_UNIT: 'ml',
+        PACK_PRICE: r.price, UPDATED: now,
+      })));
+      saved = priced.length;
+      await store.logPrices(priced.map((r, i) => ({ ING_ID: r.id, SUPPLIER_ID: supplier, PRICE_ID: priceIds[i], PACK_PRICE: r.price, INVOICE_REF: ref })));
+    }
+    bulk = [];
+    bulkDlg.querySelector('[data-wb-text]').value = '';
+    bulkDlg.close();
+    toast(`Added ${chosen.length} wine${chosen.length === 1 ? '' : 's'}${saved ? `, ${saved} with a price` : ''}`);
+  } catch (err) {
+    reportError(err);
+    markBulk();
+    renderBulk();
+  } finally {
+    if (root?.isConnected) render(root);
+  }
 }

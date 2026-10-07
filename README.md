@@ -53,6 +53,7 @@ in `index.html` (one search-and-replace), and add any new `js/` module to the im
 | `js/units.js` | Recipe measurement families (weight / volume / each) and conversions |
 | `js/recipe-cost.js` | Live recipe costing: line costs, sub-recipes, cost per portion, GP, allergen roll-up, loop guard |
 | `js/recipe-paste.js` | Paste-a-recipe parser (ported from Carisma Ops) |
+| `js/wine-paste.js` | Wine-list parser for "Add many" on the Wines page (producer, wine, vintage, size, style, price) |
 | `js/ui.js` | Escaping, formatting, toasts, form dialog |
 | `js/views/*.js` | One module per screen (`wines.js` is the wine list); `prices.js` is the shared price-list entry form |
 | `js/icons.js` | Line icons |
@@ -97,6 +98,8 @@ full-screen forms. It can be added to the home screen and opens like an app.
   Ingredients. They add PRODUCER, VINTAGE, REGION, GRAPE and STYLE, are measured in ml and priced
   by the bottle, and use the same suppliers and SUPPLIER_PRICES as everything else, so a bottle
   can go straight into a by-the-glass recipe. The same wine can be listed in several vintages.
+  "Add many" reads a pasted list (`Producer - Wine Vintage`, style, bottle price ex VAT) and saves
+  the prices on one chosen supplier's list.
 - Ingredients are retired by unticking ACTIVE rather than deleted, so recipes keep working.
 - RECIPE_LINES has two extra columns, `LINE_ID` and `SORT`, so a single line can be edited,
   reordered or removed in place. Lines added straight into the sheet without a LINE_ID still
