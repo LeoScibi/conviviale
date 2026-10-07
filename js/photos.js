@@ -37,6 +37,18 @@ export async function savePhoto(ingId, dataUrl) {
   }
 }
 
+/** Save many photos at once: `entries` is [{ ingId, dataUrl }]. Existing photos are replaced. */
+export async function savePhotos(entries) {
+  await store.refresh('PHOTOS');
+  const now = store.today();
+  const updates = entries.filter(e => photoRow(e.ingId))
+    .map(e => ({ id: photoRow(e.ingId).PHOTO_ID, record: { IMAGE: e.dataUrl, UPDATED: now } }));
+  const adds = entries.filter(e => !photoRow(e.ingId)).map(e => ({ ING_ID: e.ingId, IMAGE: e.dataUrl, UPDATED: now }));
+  // A few at a time: each photo is tens of kilobytes and the Sheets API caps the size of a request.
+  for (let i = 0; i < updates.length; i += 10) await store.updateMany('PHOTOS', updates.slice(i, i + 10));
+  for (let i = 0; i < adds.length; i += 10) await store.createMany('PHOTOS', adds.slice(i, i + 10));
+}
+
 function loadImage(file) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);

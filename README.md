@@ -103,7 +103,8 @@ full-screen forms. It can be added to the home screen and opens like an app.
   the prices on one chosen supplier's list.
 - A wine's photo is shrunk in the browser (longest side 420 px or less) and stored as a JPEG data URL
   in the PHOTOS tab, because a sheet cell holds at most 50,000 characters. It is a thumbnail, not
-  the original picture. Deleting a row in PHOTOS removes the photo.
+  the original picture. Deleting a row in PHOTOS removes the photo. "Add photos" on the Wines page
+  takes many pictures at once and matches each to a wine by file name (`Producer - Wine Vintage.jpg`).
 - Ingredients are retired by unticking ACTIVE rather than deleted, so recipes keep working.
 - RECIPE_LINES has two extra columns, `LINE_ID` and `SORT`, so a single line can be edited,
   reordered or removed in place. Lines added straight into the sheet without a LINE_ID still

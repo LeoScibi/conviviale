@@ -11,7 +11,8 @@ import {
 } from '../costing.js';
 import { openPriceForm, pricesSectionHtml, historyHtml, supplierName } from './prices.js';
 import { parseWineList, wineKey } from '../wine-paste.js';
-import { photoFor, savePhoto, fileToPhoto } from '../photos.js';
+import { photoFor, savePhoto, savePhotos, fileToPhoto } from '../photos.js';
+import { normName } from '../recipe-paste.js';
 
 const BOTTLE_UNIT_OPTIONS = [['cl', 'cl'], ['ml', 'ml'], ['L', 'L']];
 const GLASS_ML = 125;
@@ -38,6 +39,7 @@ export function render(el) {
         <h1 class="title">Wines</h1>
       </div>
       <div class="head-actions">
+        <button class="btn sm" data-photos>Add photos</button>
         <button class="btn sm" data-bulk>Add many</button>
         <button class="btn primary add-desktop" data-add>${icons.plus} Add wine</button>
       </div>
@@ -70,6 +72,7 @@ export function render(el) {
   el.querySelector('[data-inactive]').addEventListener('change', e => { state.inactive = e.target.checked; renderList(); });
   el.querySelectorAll('[data-add]').forEach(b => b.addEventListener('click', () => openForm(null)));
   el.querySelector('[data-bulk]').addEventListener('click', openBulk);
+  el.querySelector('[data-photos]').addEventListener('click', openPhotos);
   el.querySelector('[data-move]')?.addEventListener('click', moveStrays);
   el.querySelector('[data-list]').addEventListener('click', e => {
     const hit = e.target.closest('.card-hit');
@@ -487,6 +490,143 @@ async function saveBulk() {
     reportError(err);
     markBulk();
     renderBulk();
+  } finally {
+    if (root?.isConnected) render(root);
+  }
+}
+
+// ============================================================ add many photos
+
+let photosDlg = null;
+let shots = []; // { file, dataUrl, ingId, error }
+
+function ensurePhotosDialog() {
+  if (photosDlg) return;
+  photosDlg = document.createElement('dialog');
+  photosDlg.className = 'modal paste-sheet bulk-sheet';
+  photosDlg.innerHTML = `
+    <div class="modal-form">
+      <header class="modal-head">
+        <h2>Add many photos</h2>
+        <button type="button" class="icon-btn" data-act="close" aria-label="Close">&times;</button>
+      </header>
+      <div class="modal-body">
+        <p class="muted small">Choose several pictures at once. Each is matched to a wine by its file name (e.g. <i>Marcel Lapierre - Morgon 2024.jpg</i>); check the matches, and pick the wine yourself where one wasn't found. A wine that already has a photo gets the new one.</p>
+        <label class="btn primary block upload-btn">
+          <input type="file" accept="image/*" multiple data-ph-files hidden>
+          Choose pictures
+        </label>
+        <p class="small muted paste-summary" data-ph-summary></p>
+        <div data-ph-rows></div>
+      </div>
+      <footer class="modal-foot">
+        <button type="button" class="btn" data-act="close">Cancel</button>
+        <button type="button" class="btn primary" data-act="save" disabled>Save photos</button>
+      </footer>
+    </div>`;
+  document.body.append(photosDlg);
+  const confirmDiscard = () => !shots.some(s => s.ingId) || confirm('Discard these photos without saving?');
+  photosDlg.addEventListener('close', parkToasts);
+  photosDlg.addEventListener('cancel', e => { if (!confirmDiscard()) e.preventDefault(); });
+  photosDlg.addEventListener('click', e => {
+    const act = e.target.closest('[data-act]')?.dataset.act;
+    if (act === 'close') { if (confirmDiscard()) photosDlg.close(); } else if (act === 'save') saveShots();
+  });
+  photosDlg.addEventListener('change', async e => {
+    const t = e.target;
+    if (t.matches('[data-ph-files]')) {
+      const files = [...t.files];
+      t.value = '';
+      await addShots(files);
+    } else if (t.matches('[data-f=wine]')) {
+      shots[Number(t.closest('[data-s]').dataset.s)].ingId = t.value;
+      renderShots();
+    }
+  });
+}
+
+function openPhotos() {
+  ensurePhotosDialog();
+  shots = [];
+  renderShots();
+  photosDlg.showModal();
+  parkToasts();
+}
+
+/**
+ * The wine a file name most likely shows: every word of the wine's name must be in the file
+ * name, and the wine sharing the most words (producer and vintage included) wins. A tie is no match.
+ */
+function matchWine(filename) {
+  const words = new Set(normName(filename.replace(/\.[a-z0-9]+$/i, '')).split(' '));
+  let best = null;
+  let tied = false;
+  for (const w of wines()) {
+    const name = normName(w.NAME).split(' ').filter(Boolean);
+    if (!name.length || !name.every(t => words.has(t))) continue;
+    const score = normName(`${w.NAME} ${w.PRODUCER} ${w.VINTAGE}`).split(' ').filter(t => words.has(t)).length;
+    if (score === best?.score) tied = true;
+    else if (score > (best?.score ?? 0)) { best = { id: String(w.ING_ID), score }; tied = false; }
+  }
+  return best && !tied ? best.id : '';
+}
+
+async function addShots(files) {
+  const summary = photosDlg.querySelector('[data-ph-summary]');
+  for (const [i, file] of files.entries()) {
+    summary.textContent = `Reading ${i + 1} of ${files.length}…`;
+    const shot = { file, dataUrl: '', ingId: '', error: '' };
+    try {
+      shot.dataUrl = await fileToPhoto(file);
+      shot.ingId = matchWine(file.name);
+    } catch (err) {
+      shot.error = err.message;
+    }
+    shots.push(shot);
+  }
+  renderShots();
+}
+
+function renderShots() {
+  const list = wines().slice().sort((a, b) => byName(a, b) || String(a.VINTAGE).localeCompare(String(b.VINTAGE)));
+  const options = sel => `<option value="">No wine (skip)</option>${
+    list.map(w => option(w.ING_ID, [displayName(w), w.PRODUCER].filter(Boolean).join(' · '), sel)).join('')}`;
+  const uses = {};
+  for (const s of shots) if (s.ingId) uses[s.ingId] = (uses[s.ingId] || 0) + 1;
+  photosDlg.querySelector('[data-ph-rows]').innerHTML = shots.map((s, i) => `
+    <div class="bulk-row photo-row${s.ingId ? '' : ' off'}" data-s="${i}">
+      <span class="wine-thumb">${s.dataUrl ? `<img src="${s.dataUrl}" alt="">` : icons.glass}</span>
+      <span class="bulk-name">
+        <small class="muted">${esc(s.file.name)}</small>
+        ${s.error ? `<small class="warn">${esc(s.error)}</small>` : `<select data-f="wine" aria-label="Wine for ${esc(s.file.name)}">${options(s.ingId)}</select>`}
+        ${uses[s.ingId] > 1 ? '<small class="warn">Another picture is matched to this wine too; the last one wins.</small>'
+          : s.ingId && photoFor(s.ingId) ? '<small class="muted">Replaces its current photo</small>' : ''}
+      </span>
+    </div>`).join('');
+  const matched = shots.filter(s => s.ingId && s.dataUrl).length;
+  photosDlg.querySelector('[data-ph-summary]').textContent = shots.length
+    ? `${shots.length} picture${shots.length === 1 ? '' : 's'} · ${matched} matched to a wine${shots.length - matched ? ` · ${shots.length - matched} to check` : ''}`
+    : '';
+  const btn = photosDlg.querySelector('[data-act="save"]');
+  btn.disabled = !matched;
+  btn.textContent = matched ? `Save ${matched} photo${matched === 1 ? '' : 's'}` : 'Save photos';
+}
+
+async function saveShots() {
+  // One photo per wine: a later picture for the same wine replaces an earlier one.
+  const byWine = new Map(shots.filter(s => s.ingId && s.dataUrl).map(s => [s.ingId, s.dataUrl]));
+  if (!byWine.size) return;
+  const btn = photosDlg.querySelector('[data-act="save"]');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  try {
+    await savePhotos([...byWine].map(([ingId, dataUrl]) => ({ ingId, dataUrl })));
+    shots = [];
+    photosDlg.close();
+    toast(`Saved ${byWine.size} photo${byWine.size === 1 ? '' : 's'}`);
+  } catch (err) {
+    reportError(err);
+    renderShots();
   } finally {
     if (root?.isConnected) render(root);
   }

@@ -344,6 +344,8 @@ fieldset.field legend { padding: 0; margin-bottom: 8px; }
 .photo-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .photo-actions label { cursor: pointer; }
 .photo-actions .hint { flex-basis: 100%; }
+.photo-row { grid-template-columns: 52px 1fr; }
+.photo-row select { width: 100%; }
 .wine-strays { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 16px; }
 .used-in { margin-top: 14px; }
 .method { white-space: pre-wrap; font-size: 14px; line-height: 1.6; }
@@ -438,7 +440,7 @@ fieldset.field legend { padding: 0; margin-bottom: 8px; }
 .pp-hidden { margin-top: 10px; }
 
 /* ---------- Add many ---------- */
-.head-actions { display: flex; gap: 8px; align-items: center; }
+.head-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; align-items: center; }
 .bulk-sheet textarea { margin: 12px 0 8px; }
 .bulk-sheet [data-act="starter"] { margin-top: 12px; }
 .bulk-group { margin-top: 14px; }
