@@ -4,20 +4,24 @@ import { icons } from '../icons.js';
 import { esc, money, formDialog, toast, reportError, parkToasts, byName, sameName, matches, option, splitList } from '../ui.js';
 import {
   PACK_UNIT_OPTIONS, MEASURE_OPTIONS, normalisePack, priceUnitCost, pricesFor, chosenPrice, ingredientUnit,
-  usableUnitCost, yieldFraction, formatUnitCost, packLabel,
+  usableUnitCost, yieldFraction, formatUnitCost, packLabel, isWine,
 } from '../costing.js';
-import { openPriceForm, priceRowHtml, supplierName } from './prices.js';
+import { openPriceForm, pricesSectionHtml, historyHtml, supplierName } from './prices.js';
+import * as wines from './wines.js';
 import { STARTER_INGREDIENTS, guessUnit } from '../starter-ingredients.js';
 import { normName } from '../recipe-paste.js';
 
 const state = { q: '', category: '', supplier: '', inactive: false };
 let root;
 
+// Wines are kept in the same tab but have their own page.
+const ingredients = () => store.rows('INGREDIENTS').filter(i => !isWine(i));
+
 const supplierMap = () => new Map(store.rows('SUPPLIERS').map(s => [String(s.SUPPLIER_ID), s]));
 
 export function render(el) {
   root = el;
-  const ings = store.rows('INGREDIENTS');
+  const ings = ingredients();
   const cats = [...new Set(ings.map(i => String(i.CATEGORY).trim()).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b, 'en-GB'));
   if (state.category && !cats.includes(state.category)) state.category = '';
@@ -68,7 +72,7 @@ export function render(el) {
 }
 
 function renderList() {
-  const all = store.rows('INGREDIENTS');
+  const all = ingredients();
   const sups = supplierMap();
   const list = all.filter(i => {
     if (!state.inactive && !i.ACTIVE) return false;
@@ -119,43 +123,17 @@ function renderList() {
   }).join('')}</div>`;
 }
 
-function historyHtml(ingId) {
-  const rows = store.rows('PRICE_HISTORY')
-    .filter(r => String(r.ING_ID) === String(ingId))
-    .sort((a, b) => String(b.DATE).localeCompare(String(a.DATE)) || b._row - a._row)
-    .slice(0, 8);
-  if (!rows.length) return '';
-  return `
-    <section class="history">
-      <h3>Price history</h3>
-      <table><tbody>${rows.map(r => `
-        <tr><td>${esc(r.DATE)}</td><td>${esc(r.SUPPLIER_ID ? supplierName(r.SUPPLIER_ID) : '')}</td><td class="num">${money(r.PACK_PRICE)}</td><td class="muted">${esc(r.INVOICE_REF)}</td></tr>`).join('')}
-      </tbody></table>
-    </section>`;
-}
-
-function pricesSectionHtml(ing) {
-  const rows = pricesFor(ing.ING_ID).slice().sort((a, b) => (priceUnitCost(a) ?? Infinity) - (priceUnitCost(b) ?? Infinity));
-  return `
-    <div class="section-head">
-      <h3 class="section-title">Supplier prices</h3>
-      <button type="button" class="btn sm" data-add-price>${icons.plus} Add price</button>
-    </div>
-    ${rows.length
-      ? `<div class="price-rows">${rows.map(p => priceRowHtml(p, supplierName(p.SUPPLIER_ID))).join('')}</div>`
-      : '<p class="muted small">No supplier prices yet. Add one so recipes can cost this ingredient.</p>'}`;
-}
-
 /**
  * Add or edit an ingredient. New ingredients can take a first supplier price in the same form;
  * existing ones show every supplier's price, and which one recipes use.
  * `prefill` seeds a new ingredient's fields; `onSaved(id)` runs after a successful save.
  */
 export function openForm(ing, { prefill = {}, onSaved } = {}) {
+  if (isWine(ing)) { wines.openForm(ing, { onSaved }); return; }
   const isNew = !ing;
   const sups = store.rows('SUPPLIERS').slice().sort(byName);
   const supOptions = sups.map(s => [s.SUPPLIER_ID, s.NAME]);
-  const categories = [...new Set([...CATEGORY_SUGGESTIONS, ...store.rows('INGREDIENTS').map(i => i.CATEGORY).filter(Boolean)])];
+  const categories = [...new Set([...CATEGORY_SUGGESTIONS, ...ingredients().map(i => i.CATEGORY).filter(Boolean)])];
 
   const fields = [
     { name: 'NAME', label: 'Ingredient name', required: true, wide: true },
@@ -238,7 +216,7 @@ export function openForm(ing, { prefill = {}, onSaved } = {}) {
     },
     onSubmit: async d => {
       const clash = store.rows('INGREDIENTS').find(i => sameName(i.NAME, d.NAME) && i.ING_ID !== ing?.ING_ID);
-      if (clash) throw new Error(`An ingredient called “${clash.NAME}” already exists (${clash.ING_ID}).`);
+      if (clash) throw new Error(`${isWine(clash) ? 'A wine' : 'An ingredient'} called “${clash.NAME}” already exists (${clash.ING_ID}).`);
       const yieldPct = d['YIELD_%'] === '' ? 100 : d['YIELD_%'];
       if (!(yieldPct > 0 && yieldPct <= 100)) throw new Error('Yield must be between 1 and 100%.');
 
@@ -404,7 +382,7 @@ function renderBulk() {
             <input type="checkbox" data-f="include"${r.include ? ' checked' : ''}${r.exists ? ' disabled' : ''} aria-label="Add ${esc(r.NAME)}">
             <span class="bulk-name">
               <input type="text" data-f="name" value="${esc(r.NAME)}" aria-label="Name">
-              ${r.exists ? '<small class="muted">Already in your ingredients</small>'
+              ${r.exists ? '<small class="muted">Already in your ingredients or wines</small>'
                 : r.ALLERGENS ? `<small class="bulk-allergens">${esc(r.ALLERGENS)}</small>` : ''}
             </span>
             <select data-f="unit" aria-label="Measured by">${['g', 'ml', 'each'].map(u => `<option${u === r.UNIT ? ' selected' : ''}>${u}</option>`).join('')}</select>

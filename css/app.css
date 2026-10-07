@@ -135,7 +135,7 @@ p { margin: 0; }
 
 /* Navigation: bottom tab bar on phones, inline in the top bar on wider screens */
 .nav {
-  position: fixed; z-index: 20; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(4, 1fr);
+  position: fixed; z-index: 20; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(5, 1fr);
   height: calc(var(--bottombar-h) + var(--safe-b)); padding-bottom: var(--safe-b);
   background: rgb(255 254 251 / .96); backdrop-filter: blur(8px); border-top: 1px solid var(--line);
 }
@@ -335,6 +335,7 @@ fieldset.field legend { padding: 0; margin-bottom: 8px; }
 .section-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .section-head b { color: var(--amber); }
 .notice { margin-top: 16px; padding: 10px 12px; border-radius: 10px; background: var(--blush-soft); color: var(--amber); font-size: 13px; font-weight: 500; }
+.wine-strays { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 16px; }
 .used-in { margin-top: 14px; }
 .method { white-space: pre-wrap; font-size: 14px; line-height: 1.6; }
 

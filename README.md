@@ -54,7 +54,7 @@ in `index.html` (one search-and-replace), and add any new `js/` module to the im
 | `js/recipe-cost.js` | Live recipe costing: line costs, sub-recipes, cost per portion, GP, allergen roll-up, loop guard |
 | `js/recipe-paste.js` | Paste-a-recipe parser (ported from Carisma Ops) |
 | `js/ui.js` | Escaping, formatting, toasts, form dialog |
-| `js/views/*.js` | One module per screen; `prices.js` is the shared price-list entry form |
+| `js/views/*.js` | One module per screen (`wines.js` is the wine list); `prices.js` is the shared price-list entry form |
 | `js/icons.js` | Line icons |
 | `assets/` | Brand wordmarks, tree-ring pattern, paper and olive textures, home-screen icons |
 
@@ -93,6 +93,10 @@ full-screen forms. It can be added to the home screen and opens like an app.
 - Sheets created before price lists keep their old SUPPLIER_CODE / PACK_SIZE / PACK_UNIT /
   PACK_PRICE columns on INGREDIENTS. On first load those prices are copied into SUPPLIER_PRICES;
   after that the app ignores the old columns, and they can be deleted from the sheet.
+- Wines are rows in INGREDIENTS with `KIND` = `wine`, shown on their own Wines page instead of
+  Ingredients. They add PRODUCER, VINTAGE, REGION, GRAPE and STYLE, are measured in ml and priced
+  by the bottle, and use the same suppliers and SUPPLIER_PRICES as everything else, so a bottle
+  can go straight into a by-the-glass recipe. The same wine can be listed in several vintages.
 - Ingredients are retired by unticking ACTIVE rather than deleted, so recipes keep working.
 - RECIPE_LINES has two extra columns, `LINE_ID` and `SORT`, so a single line can be edited,
   reordered or removed in place. Lines added straight into the sheet without a LINE_ID still
@@ -114,4 +118,5 @@ full-screen forms. It can be added to the home screen and opens like an app.
 - **Phase 2 (done):** recipe builder: cost per portion, GP% vs target, allergens rolled up through sub-recipes,
   scaling, paste importer. Wine by the glass is a drink recipe using a bottle ingredient (e.g. 175 ml of a 750 ml bottle).
 - **Menus (done):** menu builder with estimated food cost and a combined shopping list.
+- **Wines (done):** wine list with producer, vintage, region, grape and style, bottle cost and cost per glass.
 - **Phase 3:** inventory: stock counts, deliveries, waste.

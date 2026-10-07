@@ -2,7 +2,7 @@ import * as store from '../store.js';
 import { ORDER_DAYS } from '../config.js';
 import { icons } from '../icons.js';
 import { esc, money, formDialog, toast, reportError, byName, sameName, matches, splitList, parkToasts } from '../ui.js';
-import { PACK_UNIT_OPTIONS, normalisePack, ingredientUnit, priceUnitCost, pricesFor, formatUnitCost } from '../costing.js';
+import { PACK_UNIT_OPTIONS, normalisePack, ingredientUnit, priceUnitCost, pricesFor, formatUnitCost, displayName } from '../costing.js';
 import { normName } from '../recipe-paste.js';
 import { parsePriceList, matchProduct } from '../pricelist-paste.js';
 import { pdfToLines } from '../pdf-text.js';
@@ -243,7 +243,7 @@ function renderDetail() {
 
 function renderPriceRows() {
   const host = dlg.querySelector('[data-pl-rows]');
-  const ingName = p => store.byId('INGREDIENTS', p.ING_ID)?.NAME ?? `${p.ING_ID} (deleted)`;
+  const ingName = p => { const i = store.byId('INGREDIENTS', p.ING_ID); return i ? displayName(i) : `${p.ING_ID} (deleted)`; };
   const all = supplierPrices(ds.id);
   const rows = all
     .filter(p => matches(ds.q, ingName(p), p.SUPPLIER_CODE, p.PRODUCT_NAME))

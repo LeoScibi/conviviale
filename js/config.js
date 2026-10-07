@@ -28,11 +28,14 @@ export const SCHEMA = {
   // Prices live in SUPPLIER_PRICES. SUPPLIER_ID here is the *preferred* supplier; blank means
   // recipes use the cheapest price. Sheets created before price lists still carry old
   // SUPPLIER_CODE / PACK_* columns on this tab; the app no longer reads them after migrating.
+  // Wines live here too, marked KIND = wine, so price lists, recipes (wine by the glass) and menus
+  // treat them like any other ingredient. They get their own page and the wine-only columns
+  // PRODUCER / VINTAGE / REGION / GRAPE / STYLE; they're measured in ml and priced by the bottle.
   INGREDIENTS: {
     idField: 'ING_ID',
     idPrefix: 'ING',
     headers: ['ING_ID', 'NAME', 'CATEGORY', 'UNIT', 'SUPPLIER_ID', 'YIELD_%', 'ALLERGENS', 'STORAGE',
-      'SHELF_LIFE', 'ACTIVE'],
+      'SHELF_LIFE', 'ACTIVE', 'KIND', 'PRODUCER', 'VINTAGE', 'REGION', 'GRAPE', 'STYLE'],
     numbers: ['YIELD_%'],
     booleans: ['ACTIVE'],
   },
@@ -92,5 +95,9 @@ export const ORDER_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 export const CATEGORY_SUGGESTIONS = ['Meat', 'Fish', 'Dairy', 'Cheese', 'Charcuterie', 'Veg', 'Fruit',
   'Herbs & spices', 'Dry goods', 'Oils & vinegars', 'Bakery', 'Wine', 'Spirits', 'Beer', 'Soft drinks',
   'Packaging'];
+
+export const WINE_KIND = 'wine';
+export const WINE_CATEGORY = 'Wine';
+export const WINE_STYLES = ['Red', 'White', 'Rosé', 'Orange', 'Sparkling', 'Sweet', 'Fortified'];
 
 export const STORAGE_SUGGESTIONS = ['Ambient', 'Chilled', 'Frozen', 'Cellar'];

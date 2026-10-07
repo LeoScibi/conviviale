@@ -3,8 +3,10 @@
 
 import * as store from '../store.js';
 import { esc, money, formDialog, toast, byName } from '../ui.js';
+import { icons } from '../icons.js';
 import {
   PACK_UNIT_OPTIONS, normalisePack, priceUnitCost, ingredientUnit, chosenPrice, pricesFor, formatUnitCost, packLabel,
+  isWine, displayName,
 } from '../costing.js';
 import { normName } from '../recipe-paste.js';
 
@@ -39,6 +41,34 @@ export function priceRowHtml(p, title) {
     </button>`;
 }
 
+/** The "Supplier prices" block on an ingredient's (or wine's) form, cheapest first. */
+export function pricesSectionHtml(ing) {
+  const rows = pricesFor(ing.ING_ID).slice().sort((a, b) => (priceUnitCost(a) ?? Infinity) - (priceUnitCost(b) ?? Infinity));
+  return `
+    <div class="section-head">
+      <h3 class="section-title">Supplier prices</h3>
+      <button type="button" class="btn sm" data-add-price>${icons.plus} Add price</button>
+    </div>
+    ${rows.length
+      ? `<div class="price-rows">${rows.map(p => priceRowHtml(p, supplierName(p.SUPPLIER_ID))).join('')}</div>`
+      : `<p class="muted small">No supplier prices yet. Add one so recipes can cost this ${isWine(ing) ? 'wine' : 'ingredient'}.</p>`}`;
+}
+
+export function historyHtml(ingId) {
+  const rows = store.rows('PRICE_HISTORY')
+    .filter(r => String(r.ING_ID) === String(ingId))
+    .sort((a, b) => String(b.DATE).localeCompare(String(a.DATE)) || b._row - a._row)
+    .slice(0, 8);
+  if (!rows.length) return '';
+  return `
+    <section class="history">
+      <h3>Price history</h3>
+      <table><tbody>${rows.map(r => `
+        <tr><td>${esc(r.DATE)}</td><td>${esc(r.SUPPLIER_ID ? supplierName(r.SUPPLIER_ID) : '')}</td><td class="num">${money(r.PACK_PRICE)}</td><td class="muted">${esc(r.INVOICE_REF)}</td></tr>`).join('')}
+      </tbody></table>
+    </section>`;
+}
+
 /**
  * Add or edit a price-list entry.
  *  - `price`: existing SUPPLIER_PRICES row to edit, or null to add.
@@ -55,9 +85,9 @@ export function openPriceForm({ price = null, supplierId = null, ingId = null, o
   const fields = [];
   if (!fixedIng) {
     fields.push({
-      name: 'ING_NAME', label: 'Ingredient', required: true, wide: true, autocomplete: 'off',
-      suggestions: store.rows('INGREDIENTS').filter(i => i.ACTIVE).map(i => i.NAME),
-      hint: 'Pick one of your ingredients, or type a new name to create it.',
+      name: 'ING_NAME', label: 'Ingredient or wine', required: true, wide: true, autocomplete: 'off',
+      suggestions: store.rows('INGREDIENTS').filter(i => i.ACTIVE).map(displayName),
+      hint: 'Pick one of your ingredients or wines, or type a new name to create an ingredient.',
     });
   }
   if (!fixedSupplier || !isNew) {
@@ -77,8 +107,8 @@ export function openPriceForm({ price = null, supplierId = null, ingId = null, o
   );
 
   const title = isNew
-    ? (ing ? `Add a price for ${ing.NAME}` : `Add to ${supplierName(fixedSupplier)}`)
-    : `${store.byId('INGREDIENTS', price.ING_ID)?.NAME ?? 'Price'} · ${supplierName(price.SUPPLIER_ID)}`;
+    ? (ing ? `Add a price for ${displayName(ing)}` : `Add to ${supplierName(fixedSupplier)}`)
+    : `${displayName(ing) || 'Price'} · ${supplierName(price.SUPPLIER_ID)}`;
 
   formDialog({
     title,
@@ -115,7 +145,8 @@ export function openPriceForm({ price = null, supplierId = null, ingId = null, o
       let created = false;
       if (!target) {
         const name = d.ING_NAME.trim();
-        target = store.rows('INGREDIENTS').find(i => normName(i.NAME) === normName(name)) || null;
+        const all = store.rows('INGREDIENTS');
+        target = all.find(i => normName(displayName(i)) === normName(name)) || all.find(i => normName(i.NAME) === normName(name)) || null;
         if (!target) {
           const id = await store.create('INGREDIENTS', { NAME: name, UNIT: unit, 'YIELD_%': 100, ACTIVE: true });
           target = store.byId('INGREDIENTS', id);

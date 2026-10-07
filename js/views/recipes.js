@@ -6,7 +6,7 @@ import * as store from '../store.js';
 import { RECIPE_TYPES, RECIPE_DEFAULTS } from '../config.js';
 import { icons } from '../icons.js';
 import { esc, money, formDialog, toast, reportError, byName, sameName, matches, parkToasts } from '../ui.js';
-import { formatUnitCost, usableUnitCost, chosenPrice } from '../costing.js';
+import { formatUnitCost, usableUnitCost, chosenPrice, displayName } from '../costing.js';
 import { createCoster, ingredientFamily, isSub } from '../recipe-cost.js';
 import { BASE, unitsFor, unitLabel, fmtQty, normUnit, familyOf, toBase } from '../units.js';
 import { parseRecipeText, normName } from '../recipe-paste.js';
@@ -441,7 +441,7 @@ function searchItems(q) {
   if (!q.trim()) return [];
   const coster = createCoster();
   const ings = store.rows('INGREDIENTS').filter(i => i.ACTIVE)
-    .map(i => ({ type: 'ING', id: String(i.ING_ID), name: i.NAME, unpriced: usableUnitCost(i) == null }));
+    .map(i => ({ type: 'ING', id: String(i.ING_ID), name: displayName(i), unpriced: usableUnitCost(i) == null }));
   const recs = store.rows('RECIPES')
     .filter(r => !coster.wouldLoop(ds.id, r.RECIPE_ID))
     .map(r => ({ type: 'SUB', id: String(r.RECIPE_ID), name: r.NAME, unpriced: false }));

@@ -6,6 +6,13 @@
 import * as store from './store.js';
 import { money } from './ui.js';
 import { familyOf, toBase, normUnit } from './units.js';
+import { WINE_KIND } from './config.js';
+
+/** Wines are ingredients marked KIND = wine; they have their own page. */
+export const isWine = ing => String(ing?.KIND ?? '').trim().toLowerCase() === WINE_KIND;
+
+/** An item's name as shown in lists: wines carry their vintage ("Barolo 2019"). */
+export const displayName = ing => (isWine(ing) && String(ing.VINTAGE).trim() ? `${ing.NAME} ${String(ing.VINTAGE).trim()}` : String(ing?.NAME ?? ''));
 
 // Friendly units accepted in forms, converted to the stored base units (g / ml / each).
 const CONVERT = { g: ['g', 1], kg: ['g', 1000], ml: ['ml', 1], cl: ['ml', 10], l: ['ml', 1000], each: ['each', 1] };
