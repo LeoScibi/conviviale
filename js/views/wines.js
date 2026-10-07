@@ -196,13 +196,14 @@ export function openForm(wine, { onSaved } = {}) {
 
   // The photo is only written when the form is saved; `undefined` means it hasn't been touched.
   let newPhoto;
+  // The thumbnail is the button: tap it to take or choose a picture.
   const photoHtml = src => `
-    <span class="wine-thumb lg">${src ? `<img src="${src}" alt="Photo of this wine">` : icons.glass}</span>
-    <div class="photo-actions">
-      <label class="btn sm"><input type="file" accept="image/*" data-photo-file hidden>${src ? 'Change photo' : 'Add photo'}</label>
-      ${src ? '<button type="button" class="btn sm" data-photo-remove>Remove</button>' : ''}
-      <small class="hint">Take one with the camera or pick one. It's saved as a small picture.</small>
-    </div>`;
+    <label class="wine-thumb lg photo-pick" title="${src ? 'Change photo' : 'Add photo'}">
+      <input type="file" accept="image/*" data-photo-file hidden>
+      ${src ? `<img src="${src}" alt="Photo of this wine">` : icons.glass}
+      <span>${src ? 'Change' : 'Add photo'}</span>
+    </label>
+    ${src ? '<button type="button" class="btn sm" data-photo-remove>Remove</button>' : ''}`;
   const writePhoto = async (id, name) => {
     if (newPhoto === undefined) return;
     try {
@@ -220,10 +221,16 @@ export function openForm(wine, { onSaved } = {}) {
     fields,
     values: wine || { ACTIVE: true, ALLERGENS: 'Sulphites', P_SIZE: 75, P_UNIT: 'cl' },
     submitLabel: isNew ? 'Add wine' : 'Save changes',
-    extraHtml: `<section class="photo-field" data-photo>${photoHtml(isNew ? '' : photoFor(wine.ING_ID))}</section>
-      <p class="cost-preview" data-preview aria-live="polite"></p>${
+    beforeHtml: `<section class="photo-head">
+      <div class="photo-col" data-photo>${photoHtml(isNew ? '' : photoFor(wine.ING_ID))}</div>
+      <div class="photo-side" data-photo-side></div>
+    </section>`,
+    extraHtml: `<p class="cost-preview" data-preview aria-live="polite"></p>${
       isNew ? '' : `<section class="prices" data-prices>${pricesSectionHtml(wine)}</section>${historyHtml(wine.ING_ID)}`}`,
     onOpen: dlg => {
+      // The name and producer sit beside the photo at the top of the form.
+      dlg.querySelector('[data-photo-side]').append(
+        ...['NAME', 'PRODUCER'].map(n => dlg.querySelector(`[name="${n}"]`).closest('.field')));
       const photoHost = dlg.querySelector('[data-photo]');
       photoHost.addEventListener('change', async e => {
         const file = e.target.matches('[data-photo-file]') && e.target.files[0];

@@ -137,7 +137,7 @@ function readForm(form, fields) {
  * (e.g. validation or an expired session, so nothing typed is lost).
  * `onChange(data, dialog)` runs on every edit, for live previews.
  */
-export function formDialog({ title, fields, values = {}, submitLabel = 'Save', extraHtml = '', onSubmit, onChange, onOpen, onDelete, deleteLabel = 'Delete' }) {
+export function formDialog({ title, fields, values = {}, submitLabel = 'Save', beforeHtml = '', extraHtml = '', onSubmit, onChange, onOpen, onDelete, deleteLabel = 'Delete' }) {
   const dlg = document.createElement('dialog');
   dlg.className = 'modal';
   dlg.innerHTML = `
@@ -147,6 +147,7 @@ export function formDialog({ title, fields, values = {}, submitLabel = 'Save', e
         <button type="button" class="icon-btn" data-close aria-label="Close">&times;</button>
       </header>
       <div class="modal-body">
+        ${beforeHtml}
         <div class="form-grid">${fields.map(f => fieldHtml(f, values[f.name])).join('')}</div>
         ${extraHtml}
       </div>
@@ -226,6 +227,6 @@ export function formDialog({ title, fields, values = {}, submitLabel = 'Save', e
   parkToasts();
   onOpen?.(dlg);
   changed();
-  form.querySelector('input:not([type=checkbox]), select, textarea')?.focus();
+  form.querySelector('input:not([type=checkbox]):not([type=file]), select, textarea')?.focus();
   return dlg;
 }
