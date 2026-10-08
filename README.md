@@ -115,6 +115,10 @@ full-screen forms. It can be added to the home screen and opens like an app.
 - A recipe line's ITEM_TYPE is `ING` or `SUB`. Sub-recipes can be used by weight/volume (needs a
   batch yield) or by `portion` (needs PORTIONS). A sub-recipe that would loop back into the
   recipe can't be added.
+- On a wine menu a bottle's price is worked out from its cost (ex VAT): over £20 it is cost + £50,
+  then + 20% VAT; at £20 or under it is priced to 70% GP, then + 20% VAT (`WINE_PRICING` in
+  `js/config.js`). Glasses are priced to 70% GP. The worked-out bottle price is filled in when a
+  wine is added and can be overridden; a price below it is flagged.
 - GP% is on the net price: SELL_PRICE is inc VAT, VAT_RATE defaults to 20% and TARGET_GP% to 70%.
 - A menu (MENUS + MENU_LINES) is a named list of recipes and how much of each is needed, in
   portions or by the recipe's batch yield. Its food cost and shopping list are derived: sub-recipes

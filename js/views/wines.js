@@ -231,7 +231,7 @@ export function openForm(wine, { onSaved } = {}) {
     onOpen: dlg => {
       // The name and producer sit beside the photo at the top of the form.
       dlg.querySelector('[data-photo-side]').append(
-        ...['NAME', 'PRODUCER'].map(n => dlg.querySelector(`[name="${n}"]`).closest('.field')));
+        ...['NAME', 'PRODUCER'].map(n => dlg.querySelector(`[name="${n}"], [data-name="${n}"]`).closest('.field')));
       const photoHost = dlg.querySelector('[data-photo]');
       photoHost.addEventListener('change', async e => {
         const file = e.target.matches('[data-photo-file]') && e.target.files[0];

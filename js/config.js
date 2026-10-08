@@ -106,6 +106,10 @@ export const RECIPE_TYPES = [['dish', 'Dish'], ['drink', 'Drink'], ['sub', 'Sub-
 export const RECIPE_DEFAULTS = { VAT_RATE: 20, TARGET_GP: 70 };
 
 // UK FIR 14 major allergens.
+// How a wine's menu price is worked out from its cost (ex VAT), before VAT is added: a bottle that
+// costs more than FLAT_OVER takes a flat cash margin; anything else is priced to TARGET_GP.
+export const WINE_PRICING = { FLAT_OVER: 20, FLAT_MARGIN: 50 };
+
 export const ALLERGENS = ['Celery', 'Gluten', 'Crustaceans', 'Eggs', 'Fish', 'Lupin', 'Milk',
   'Molluscs', 'Mustard', 'Tree nuts', 'Peanuts', 'Sesame', 'Soya', 'Sulphites'];
 

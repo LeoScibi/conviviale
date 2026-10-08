@@ -4,7 +4,7 @@
 // per wine with a Glass and a Bottle column.
 
 import * as store from '../store.js';
-import { RECIPE_DEFAULTS } from '../config.js';
+import { RECIPE_DEFAULTS, WINE_PRICING } from '../config.js';
 import { icons } from '../icons.js';
 import { esc, money, formDialog, toast, reportError, byName, sameName, matches, option, parkToasts } from '../ui.js';
 import { chosenPrice, ingredientUnit, usableUnitCost, packLabel, isWine, displayName } from '../costing.js';
@@ -52,7 +52,21 @@ function gpPct(cost, sell) {
   return ((net - cost) / net) * 100;
 }
 
-const suggestedPrice = cost => (cost / (1 - RECIPE_DEFAULTS.TARGET_GP / 100)) * (1 + RECIPE_DEFAULTS.VAT_RATE / 100);
+/** A bottle costing more than £20 is priced at cost plus a flat £50, rather than to a GP. */
+const flatMargin = (cost, serve) => serve === 'bottle' && cost > WINE_PRICING.FLAT_OVER;
+
+/** The menu price for a serve, inc VAT: cost + £50 for dearer bottles, otherwise 70% GP. */
+function suggestedPrice(cost, serve) {
+  const net = flatMargin(cost, serve) ? cost + WINE_PRICING.FLAT_MARGIN : cost / (1 - RECIPE_DEFAULTS.TARGET_GP / 100);
+  return Math.round(net * (1 + RECIPE_DEFAULTS.VAT_RATE / 100) * 100) / 100;
+}
+
+/** How that price was reached, for hints: "cost + £50 + VAT" or "70% GP". */
+const ruleText = (cost, serve) => (flatMargin(cost, serve)
+  ? `cost + ${money(WINE_PRICING.FLAT_MARGIN)} + VAT` : `${RECIPE_DEFAULTS.TARGET_GP}% GP`);
+
+/** Is a line priced at or above what the rule asks for? null when it can't be judged. */
+const onTarget = l => (l.cost == null || l.sell == null ? null : l.sell >= suggestedPrice(l.cost, l.serve) - 0.005);
 
 function build(menuId) {
   const lines = linesOf(menuId).map(line => {
@@ -220,7 +234,14 @@ function ensureDialog() {
   dlg.addEventListener('click', onClick);
   dlg.addEventListener('change', e => {
     const t = e.target;
-    if (t.matches('[data-add-wine]')) { ds.wine = t.value; renderDetail(); if (ds.wine) dlg.querySelector('[data-add-glass]').focus(); } else if (t.matches('[data-add-size]')) { ds.size = Number(t.value); renderDetail(); } else if (t.matches('[data-sort]')) { ds.sort = t.value; renderDetail(); }
+    if (t.matches('[data-add-wine]')) {
+      ds.wine = t.value;
+      // The bottle price is worked out from the cost; it can be changed, or cleared for glass only.
+      const cost = ds.wine ? serveCost(store.byId('INGREDIENTS', ds.wine), 'bottle') : null;
+      ds.bottlePrice = cost == null ? '' : suggestedPrice(cost, 'bottle').toFixed(2);
+      renderDetail();
+      if (ds.wine) dlg.querySelector('[data-add-glass]').focus();
+    } else if (t.matches('[data-add-size]')) { ds.size = Number(t.value); renderDetail(); } else if (t.matches('[data-sort]')) { ds.sort = t.value; renderDetail(); }
   });
   dlg.addEventListener('input', e => {
     if (e.target.matches('[data-add-glass]')) ds.glassPrice = e.target.value;
@@ -301,7 +322,7 @@ function cellHtml(r, serve) {
       : '<span class="wm-cell none">—</span>';
   }
   return r[serve].map(l => {
-    const gp = l.gp == null ? '' : `<span class="${l.gp >= RECIPE_DEFAULTS.TARGET_GP ? '' : 'warn'}">GP ${l.gp.toFixed(0)}%</span>`;
+    const gp = l.gp == null ? '' : `<span class="${onTarget(l) === false ? 'warn' : ''}">GP ${l.gp.toFixed(0)}%</span>`;
     const size = serve === 'glass' ? `${Number(l.line.SIZE_ML) || '?'} ml` : '';
     return `
       <button type="button" class="wm-cell ${serve}" data-line="${esc(l.line.LINE_ID)}" aria-label="Edit ${esc(nameOf(r))} by the ${label}">
@@ -343,8 +364,8 @@ function tableHtml(b) {
   }).join('');
 }
 
-const costHint = (label, cost) => (cost == null ? `${label}: no cost yet`
-  : `${label} costs ${money(cost)} (${RECIPE_DEFAULTS.TARGET_GP}% GP at ${money(suggestedPrice(cost))})`);
+const costHint = (label, cost, serve) => (cost == null ? `${label}: no cost yet`
+  : `${label} costs ${money(cost)} (${ruleText(cost, serve)} = ${money(suggestedPrice(cost, serve))})`);
 
 /** Wines that can still be added: active, and not on the menu already. */
 function addable(b) {
@@ -370,8 +391,8 @@ function addHtml(b) {
       <button type="button" class="btn primary" data-act="add"${wine ? '' : ' disabled'}>${icons.plus} Add</button>
     </div>
     <p class="hint">${wine
-      ? `${costHint(`${ds.size} ml glass`, serveCost(wine, 'glass', ds.size))} · ${costHint('Bottle', serveCost(wine, 'bottle'))}. Prices include VAT.`
-      : 'Fill in the glass price, the bottle price, or both. Leave the glass blank for bottle only; you can add it later with the + in its column.'}</p>`;
+      ? `${costHint(`${ds.size} ml glass`, serveCost(wine, 'glass', ds.size), 'glass')} · ${costHint('Bottle', serveCost(wine, 'bottle'), 'bottle')}. Prices include VAT.`
+      : 'Pick a wine and its bottle price is worked out for you. Leave the glass blank for bottle only; you can add it later with the + in its column.'}</p>`;
 }
 
 function renderDetail() {
@@ -444,14 +465,16 @@ function openLineForm({ lineId = null, ingId = null, serve = null }) {
   formDialog({
     title: `${name} · ${SERVES[kind].toLowerCase()}`,
     fields,
-    values: line ? { SIZE_ML: line.SIZE_ML || 125, SELL_PRICE: line.SELL_PRICE } : { SIZE_ML: 125 },
+    // A bottle being added starts at its worked-out price.
+    values: line ? { SIZE_ML: line.SIZE_ML || 125, SELL_PRICE: line.SELL_PRICE }
+      : { SIZE_ML: 125, SELL_PRICE: kind === 'bottle' && serveCost(wine, kind) != null ? suggestedPrice(serveCost(wine, kind), kind).toFixed(2) : '' },
     submitLabel: line ? 'Save' : `Add ${kind}`,
     extraHtml: '<p class="cost-preview" data-preview aria-live="polite"></p>',
     onChange: (d, form) => {
       const cost = serveCost(wine, kind, d.SIZE_ML);
       const gp = gpPct(cost, d.SELL_PRICE);
       form.querySelector('[data-preview]').innerHTML = cost == null ? 'No cost for this serve yet.'
-        : `Costs ${money(cost)}${gp == null ? '' : ` · <strong>GP ${gp.toFixed(0)}%</strong>`} · ${RECIPE_DEFAULTS.TARGET_GP}% GP at ${money(suggestedPrice(cost))}`;
+        : `Costs ${money(cost)}${gp == null ? '' : ` · <strong>GP ${gp.toFixed(0)}%</strong>`} · ${ruleText(cost, kind)} = ${money(suggestedPrice(cost, kind))}`;
     },
     deleteLabel: 'Remove',
     onDelete: line ? async () => {
