@@ -13,6 +13,7 @@ import { openPriceForm, pricesSectionHtml, historyHtml, supplierName } from './p
 import { parseWineList, wineKey } from '../wine-paste.js';
 import { photoFor, savePhoto, savePhotos, fileToPhoto } from '../photos.js';
 import { normName } from '../recipe-paste.js';
+import '../item-search.js';
 
 const BOTTLE_UNIT_OPTIONS = [['cl', 'cl'], ['ml', 'ml'], ['L', 'L']];
 const GLASS_ML = 125;
@@ -596,8 +597,6 @@ async function addShots(files) {
 
 function renderShots() {
   const list = wines().slice().sort((a, b) => byName(a, b) || String(a.VINTAGE).localeCompare(String(b.VINTAGE)));
-  const options = sel => `<option value="">No wine (skip)</option>${
-    list.map(w => option(w.ING_ID, [displayName(w), w.PRODUCER].filter(Boolean).join(' · '), sel)).join('')}`;
   const uses = {};
   for (const s of shots) if (s.ingId) uses[s.ingId] = (uses[s.ingId] || 0) + 1;
   photosDlg.querySelector('[data-ph-rows]').innerHTML = shots.map((s, i) => `
@@ -605,11 +604,13 @@ function renderShots() {
       <span class="wine-thumb">${s.dataUrl ? `<img src="${s.dataUrl}" alt="">` : icons.glass}</span>
       <span class="bulk-name">
         <small class="muted">${esc(s.file.name)}</small>
-        ${s.error ? `<small class="warn">${esc(s.error)}</small>` : `<select data-f="wine" aria-label="Wine for ${esc(s.file.name)}">${options(s.ingId)}</select>`}
+        ${s.error ? `<small class="warn">${esc(s.error)}</small>` : `<item-search data-f="wine" placeholder="Search for the wine (blank skips it)" aria-label="Wine for ${esc(s.file.name)}" value="${esc(s.ingId)}"></item-search>`}
         ${uses[s.ingId] > 1 ? '<small class="warn">Another picture is matched to this wine too; the last one wins.</small>'
           : s.ingId && photoFor(s.ingId) ? '<small class="muted">Replaces its current photo</small>' : ''}
       </span>
     </div>`).join('');
+  const items = list.map(w => ({ value: w.ING_ID, label: displayName(w), sub: w.PRODUCER }));
+  photosDlg.querySelectorAll('[data-f=wine]').forEach(el => { el.items = items; });
   const matched = shots.filter(s => s.ingId && s.dataUrl).length;
   photosDlg.querySelector('[data-ph-summary]').textContent = shots.length
     ? `${shots.length} picture${shots.length === 1 ? '' : 's'} · ${matched} matched to a wine${shots.length - matched ? ` · ${shots.length - matched} to check` : ''}`

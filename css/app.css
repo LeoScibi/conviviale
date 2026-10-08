@@ -335,11 +335,14 @@ fieldset.field legend { padding: 0; margin-bottom: 8px; }
 .section-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .section-head b { color: var(--amber); }
 .notice { margin-top: 16px; padding: 10px 12px; border-radius: 10px; background: var(--blush-soft); color: var(--amber); font-size: 13px; font-weight: 500; }
-.wine-card { grid-template-columns: 52px 1fr; column-gap: 12px; align-items: start; }
+/* The photo fills the card's full height: scaled to fit and cropped to its middle strip. */
+.wine-card { grid-template-columns: 60px 1fr; column-gap: 14px; align-items: start; }
+.wine-card > .wine-thumb { position: relative; align-self: stretch; width: 60px; height: auto; min-height: 84px; }
+.wine-card > .wine-thumb img { position: absolute; inset: 0; }
 .wine-card-body { display: grid; gap: 8px; min-width: 0; }
 .wine-thumb { display: grid; place-items: center; width: 52px; height: 70px; border-radius: 8px; overflow: hidden; background: var(--cream-soft); color: var(--sage); }
-/* Show the whole picture, never a cropped or zoomed-in part of it. */
-.wine-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; background: #fff; }
+/* Bottles are centred in their photos, so fill the frame and keep the middle. */
+.wine-thumb img { width: 100%; height: 100%; object-fit: cover; object-position: center; display: block; background: #fff; }
 .wine-thumb.lg { width: 96px; height: 128px; border-radius: 10px; flex-shrink: 0; }
 .photo-head { display: grid; grid-template-columns: 96px 1fr; gap: 14px; align-items: start; margin-bottom: 14px; }
 .photo-col { display: grid; gap: 8px; justify-items: stretch; }
@@ -386,14 +389,14 @@ fieldset.field legend { padding: 0; margin-bottom: 8px; }
 .wm-sort { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
 .wm-sort select { min-height: 36px; padding: 6px 28px 6px 10px; font-size: 13px; border-radius: 999px; }
 .wm-add { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: center; margin-top: 12px; }
-.wm-add > select[data-add-wine], .wm-add > .wm-price, .wm-add > .btn { grid-column: 1 / -1; }
+.wm-add > [data-add-wine], .wm-add > .wm-price, .wm-add > .btn { grid-column: 1 / -1; }
 .wm-price { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .wm-price .icon { flex-shrink: 0; color: var(--sage); }
 .wm-price input { min-width: 0; flex: 1; }
 .wm-price select { flex: 0 0 104px; }
 @media (min-width: 820px) {
   .wm-add { grid-template-columns: 1.4fr 1.2fr 150px auto; }
-  .wm-add > select[data-add-wine], .wm-add > .wm-price, .wm-add > .btn { grid-column: auto; }
+  .wm-add > [data-add-wine], .wm-add > .wm-price, .wm-add > .btn { grid-column: auto; }
   .wm-head, .wm-row { grid-template-columns: minmax(0, 1fr) 120px 120px; }
 }
 .wine-strays { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 16px; }
@@ -440,6 +443,15 @@ fieldset.field legend { padding: 0; margin-bottom: 8px; }
 .result.create { color: var(--olive); font-weight: 600; justify-content: flex-start; border-style: dashed; }
 .result.create .icon { width: 18px; height: 18px; }
 .picker { display: grid; gap: 6px; }
+/* <item-search>: a search box whose matches drop down beneath it. */
+item-search { display: block; position: relative; min-width: 0; }
+item-search > input { width: 100%; }
+.item-results { position: absolute; z-index: 6; left: 0; right: 0; top: calc(100% + 4px); max-height: 300px; overflow-y: auto; padding: 4px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
+.item-results[hidden] { display: none; }
+.item-results .result { border-color: transparent; min-height: 44px; }
+.item-results .result:hover, .item-results .result[aria-selected="true"] { background: var(--cream-soft); border-color: var(--cream); }
+.item-more { padding: 8px 12px; font-size: 12px; color: var(--muted); }
 .picked { border: 1px solid var(--olive); border-radius: 12px; padding: 12px; display: grid; gap: 10px; background: var(--surface); }
 .picked-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .picked-head small { display: block; font-size: 12px; color: var(--muted); }

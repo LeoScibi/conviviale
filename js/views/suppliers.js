@@ -1,4 +1,5 @@
 import * as store from '../store.js';
+import '../item-search.js';
 import { ORDER_DAYS } from '../config.js';
 import { icons } from '../icons.js';
 import { esc, money, formDialog, toast, reportError, byName, sameName, matches, splitList, parkToasts } from '../ui.js';
@@ -284,7 +285,6 @@ function ensurePasteDialog() {
         <label class="toggle-chip pp-filter" hidden><input type="checkbox" data-pp-mine checked> Only products I use</label>
         <div class="paste-rows" data-pp-rows></div>
         <p class="muted small pp-hidden" data-pp-hidden></p>
-        <datalist id="pp-ingredients"></datalist>
       </div>
       <footer class="modal-foot">
         <button type="button" class="btn" data-act="close">Cancel</button>
@@ -331,8 +331,6 @@ function openPaste(supplierId) {
   pasteDlg.querySelector('[data-pp-title]').textContent = `Paste ${store.byId('SUPPLIERS', supplierId)?.NAME ?? ''} prices`;
   pasteDlg.querySelector('[data-pp-text]').value = '';
   pasteDlg.querySelector('[data-pp-ref]').value = '';
-  pasteDlg.querySelector('#pp-ingredients').innerHTML =
-    store.rows('INGREDIENTS').filter(i => i.ACTIVE).map(i => `<option value="${esc(i.NAME)}">`).join('');
   renderRows();
   pasteDlg.showModal();
   parkToasts();
@@ -425,7 +423,7 @@ function rowHtml(r, i) {
     <div class="paste-row${r.include ? '' : ' off'}" data-i="${i}">
       <label class="paste-include"><input type="checkbox" data-f="include"${r.include ? ' checked' : ''}><span>${esc(r.raw)}</span></label>
       ${r.note ? `<p class="hint warn">${esc(r.note)}</p>` : ''}
-      <input type="text" data-f="name" list="pp-ingredients" value="${esc(r.name)}" aria-label="Ingredient">
+      <item-search allow-new data-f="name" value="${esc(r.name)}" aria-label="Ingredient"></item-search>
       ${rowStatus(r)}${r.code ? ` <small class="muted">· code ${esc(r.code)}</small>` : ''}
       <div class="pack-row">
         <input type="number" inputmode="decimal" min="0" step="any" data-f="size" value="${esc(r.size)}" placeholder="Pack" aria-label="Pack size">
@@ -441,6 +439,8 @@ function renderRows() {
   const onlyMine = !pasteDlg.querySelector('.pp-filter').hidden && pasteDlg.querySelector('[data-pp-mine]').checked;
   const shown = rows.map((r, i) => [r, i]).filter(([r]) => !onlyMine || r.mine || r.include);
   pasteDlg.querySelector('[data-pp-rows]').innerHTML = shown.map(([r, i]) => rowHtml(r, i)).join('');
+  const names = store.rows('INGREDIENTS').filter(i => i.ACTIVE).map(i => ({ value: i.NAME, label: i.NAME }));
+  pasteDlg.querySelectorAll('item-search[data-f=name]').forEach(el => { el.items = names; });
   const hidden = rows.length - shown.length;
   pasteDlg.querySelector('[data-pp-hidden]').textContent = hidden
     ? `${hidden} other product${hidden === 1 ? '' : 's'} on this list ${hidden === 1 ? 'isn\u2019t' : 'aren\u2019t'} among your ingredients. Untick “Only products I use” to see ${hidden === 1 ? 'it' : 'them'}.`

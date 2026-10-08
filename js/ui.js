@@ -21,10 +21,13 @@ export const byName = (a, b) => String(a.NAME).localeCompare(String(b.NAME), 'en
 
 export const sameName = (a, b) => String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
 
-/** Every whitespace-separated term in `q` must appear somewhere in `haystack`. */
+/** Lower-case and without accents, so "thevenet" finds "Thévenet". */
+export const fold = s => String(s ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+/** Every whitespace-separated term in `q` must appear somewhere in `haystack`, ignoring case and accents. */
 export function matches(q, ...haystack) {
-  const text = haystack.join(' ').toLowerCase();
-  return q.toLowerCase().split(/\s+/).filter(Boolean).every(t => text.includes(t));
+  const text = fold(haystack.join(' '));
+  return fold(q).split(/\s+/).filter(Boolean).every(t => text.includes(t));
 }
 
 export function option(value, label, selected) {
@@ -110,12 +113,16 @@ function fieldHtml(f, value) {
     default: {
       const attrs = ['min', 'max', 'step', 'placeholder', 'inputmode', 'autocomplete']
         .filter(a => f[a] != null).map(a => ` ${a}="${esc(f[a])}"`).join('');
-      const list = f.suggestions ? ` list="${id}-dl"` : '';
-      const dl = f.suggestions ? `<datalist id="${id}-dl">${f.suggestions.map(s => `<option value="${esc(s)}">`).join('')}</datalist>` : '';
-      return `<label class="${cls}"><span>${label}</span><input type="${f.type || 'text'}" name="${name}" value="${esc(v)}"${attrs}${list}${req}>${dl}${hint}</label>`;
+      // A text field with suggestions: <item-search allow-new>, whose suggestions ignore accents.
+      if (f.suggestions) {
+        return `<label class="${cls}"><span>${label}</span><item-search allow-new data-name="${name}" value="${esc(v)}" placeholder="${esc(f.placeholder ?? '')}" aria-label="${esc(f.label)}"></item-search>${hint}</label>`;
+      }
+      return `<label class="${cls}"><span>${label}</span><input type="${f.type || 'text'}" name="${name}" value="${esc(v)}"${attrs}${req}>${hint}</label>`;
     }
   }
 }
+
+const suggestBox = (form, f) => form.querySelector(`item-search[data-name="${CSS.escape(f.name)}"]`);
 
 function readForm(form, fields) {
   const out = {};
@@ -124,6 +131,8 @@ function readForm(form, fields) {
       out[f.name] = [...form.querySelectorAll(`input[name="${CSS.escape(f.name)}"]:checked`)].map(i => i.value).join(', ');
     } else if (f.type === 'checkbox') {
       out[f.name] = form.elements[f.name].checked;
+    } else if (f.suggestions) {
+      out[f.name] = suggestBox(form, f).value.trim();
     } else {
       const raw = form.elements[f.name].value.trim();
       out[f.name] = f.type === 'number' ? (raw === '' ? '' : Number(raw)) : raw;
@@ -161,6 +170,7 @@ export function formDialog({ title, fields, values = {}, submitLabel = 'Save', b
   document.body.append(dlg);
 
   const form = dlg.querySelector('form');
+  for (const f of fields.filter(x => x.suggestions)) suggestBox(form, f).items = f.suggestions.map(s => ({ value: s, label: s }));
   const errEl = dlg.querySelector('.form-error');
   const submit = form.querySelector('[type=submit]');
   let busy = false;
@@ -180,7 +190,11 @@ export function formDialog({ title, fields, values = {}, submitLabel = 'Save', b
     const label = submit.textContent;
     submit.textContent = 'Saving…';
     try {
-      await onSubmit(readForm(form, fields));
+      const data = readForm(form, fields);
+      // Suggestion boxes aren't native inputs, so the browser doesn't enforce `required` on them.
+      const blank = fields.find(f => f.suggestions && f.required && !data[f.name]);
+      if (blank) throw new Error(`Enter the ${blank.label.toLowerCase()}.`);
+      await onSubmit(data);
       busy = false;
       dlg.close();
     } catch (err) {

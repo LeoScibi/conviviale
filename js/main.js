@@ -3,6 +3,7 @@ import * as auth from './auth.js';
 import * as sheets from './sheets.js';
 import * as store from './store.js';
 import { toast, setReconnectHandler } from './ui.js';
+import './item-search.js';
 import { migrateToPriceLists } from './migrate.js';
 import * as ingredients from './views/ingredients.js';
 import * as wines from './views/wines.js';

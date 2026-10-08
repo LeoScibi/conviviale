@@ -10,6 +10,7 @@ import { createCoster, ingredientFamily } from '../recipe-cost.js';
 import { BASE, unitsFor, toBase, normUnit, fmtQty } from '../units.js';
 import { supplierName } from './prices.js';
 import { menuTabs } from './wine-menus.js';
+import '../item-search.js';
 
 const state = { q: '' };
 let root;
@@ -227,6 +228,7 @@ function ensureDialog() {
       ds.recipe = e.target.value;
       ds.unit = ds.recipe ? defaultUnit(createCoster().cost(ds.recipe)) : '';
       renderDetail();
+      if (ds.recipe) dlg.querySelector('[data-add-qty]').focus();
     } else if (e.target.matches('[data-add-unit]')) ds.unit = e.target.value;
   });
   dlg.addEventListener('input', e => { if (e.target.matches('[data-add-qty]')) ds.qty = e.target.value; });
@@ -291,15 +293,11 @@ function lineHtml(l) {
 }
 
 function addHtml(coster) {
-  const recipes = store.rows('RECIPES').slice().sort(byName);
   const c = ds.recipe ? coster.cost(ds.recipe) : null;
   const units = c ? unitOptions(c) : [];
   return `
     <div class="menu-add">
-      <select data-add-recipe aria-label="Recipe">
-        <option value="">Add a recipe…</option>
-        ${recipes.map(r => option(r.RECIPE_ID, r.NAME, ds.recipe)).join('')}
-      </select>
+      <item-search data-add-recipe placeholder="Search recipes to add…" aria-label="Recipe to add" value="${esc(ds.recipe)}"></item-search>
       <input type="number" min="0" step="any" inputmode="decimal" data-add-qty value="${esc(ds.qty)}" placeholder="Qty" aria-label="Quantity needed">
       ${units.length > 1
         ? `<select data-add-unit aria-label="Unit">${units.map(u => option(u, u === 'portion' ? 'portions' : u, ds.unit)).join('')}</select>`
@@ -361,6 +359,8 @@ function renderDetail() {
       <div class="section-head"><h3 class="section-title">Shopping list</h3><b>${b.shopping.length ? money(b.total) : ''}</b></div>
       ${shoppingHtml(b)}
     </section>`;
+  dlg.querySelector('[data-add-recipe]').items = store.rows('RECIPES').slice().sort(byName)
+    .map(r => ({ value: r.RECIPE_ID, label: r.NAME, sub: r.TYPE === 'sub' ? 'Sub-recipe' : r.TYPE === 'drink' ? 'Drink' : '' }));
 }
 
 function addLine() {

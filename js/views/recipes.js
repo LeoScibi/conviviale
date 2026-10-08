@@ -3,6 +3,7 @@
 // cost is computed live from raw inputs, so nothing ever needs "refreshing".
 
 import * as store from '../store.js';
+import '../item-search.js';
 import { RECIPE_TYPES, RECIPE_DEFAULTS } from '../config.js';
 import { icons } from '../icons.js';
 import { esc, money, formDialog, toast, reportError, byName, sameName, matches, parkToasts } from '../ui.js';
@@ -754,7 +755,6 @@ function ensurePasteDialog() {
         <button type="button" class="btn block" data-act="parse">Read the list</button>
         <p class="small muted paste-summary" data-paste-summary></p>
         <div class="paste-rows" data-paste-rows></div>
-        <datalist id="paste-ingredients"></datalist>
       </div>
       <footer class="modal-foot">
         <button type="button" class="btn" data-act="close">Cancel</button>
@@ -787,8 +787,6 @@ function openPaste(text = '') {
   ensurePasteDialog();
   parsed = [];
   pasteDlg.querySelector('[data-paste-text]').value = text;
-  pasteDlg.querySelector('#paste-ingredients').innerHTML =
-    store.rows('INGREDIENTS').filter(i => i.ACTIVE).map(i => `<option value="${esc(i.NAME)}">`).join('');
   if (text) parsed = parseRecipeText(text, store.rows('INGREDIENTS').filter(i => i.ACTIVE));
   renderPasteRows();
   pasteDlg.showModal();
@@ -812,7 +810,7 @@ function pasteRowHtml(p, i) {
     <div class="paste-row${p.include ? '' : ' off'}" data-i="${i}">
       <label class="paste-include"><input type="checkbox" data-p="include"${p.include ? ' checked' : ''}><span>${esc(p.raw)}</span></label>
       ${p.note ? `<p class="hint warn">${esc(p.note)}</p>` : ''}
-      <input type="text" data-p="name" list="paste-ingredients" value="${esc(ing ? ing.NAME : p.name)}" aria-label="Ingredient">
+      <item-search allow-new data-p="name" value="${esc(ing ? ing.NAME : p.name)}" aria-label="Ingredient"></item-search>
       <small class="${ing ? 'match-ok' : 'match-new'}">${ing ? '✓ Matches an ingredient' : '+ New ingredient (needs a price)'}</small>
       <div class="qty-row">
         <input type="number" inputmode="decimal" min="0" step="any" data-p="qty" value="${p.qty ?? ''}" placeholder="Qty" aria-label="Quantity">
@@ -824,6 +822,8 @@ function pasteRowHtml(p, i) {
 
 function renderPasteRows() {
   pasteDlg.querySelector('[data-paste-rows]').innerHTML = parsed.map(pasteRowHtml).join('');
+  const names = store.rows('INGREDIENTS').filter(i => i.ACTIVE).map(i => ({ value: i.NAME, label: i.NAME }));
+  pasteDlg.querySelectorAll('item-search[data-p=name]').forEach(el => { el.items = names; });
   const n = parsed.filter(p => p.include).length;
   const fresh = new Set(parsed.filter(p => p.include && !p.ingId).map(p => normName(p.name))).size;
   pasteDlg.querySelector('[data-paste-summary]').textContent = parsed.length

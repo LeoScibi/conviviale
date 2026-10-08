@@ -56,6 +56,7 @@ in `index.html` (one search-and-replace), and add any new `js/` module to the im
 | `js/photos.js` | Wine photos: shrinks a picture to a small JPEG and keeps it as text in the PHOTOS tab |
 | `js/wine-paste.js` | Wine-list parser for "Add many" on the Wines page (producer, wine, vintage, size, style, price) |
 | `js/ui.js` | Escaping, formatting, toasts, form dialog |
+| `js/item-search.js` | `<item-search>`: the search-box picker used wherever a record (wine, recipe…) is chosen from a list. Use it instead of a dropdown for any new picker, and with `allow-new` instead of a `<datalist>` for a text field with suggestions. All searching goes through `matches` / `fold` in `ui.js`, which ignore case and accents |
 | `js/views/*.js` | One module per screen (`wines.js` is the wine list); `prices.js` is the shared price-list entry form |
 | `js/icons.js` | Line icons |
 | `assets/` | Brand wordmarks, tree-ring pattern, paper and olive textures, home-screen icons |
@@ -118,8 +119,8 @@ full-screen forms. It can be added to the home screen and opens like an app.
 - A menu (MENUS + MENU_LINES) is a named list of recipes and how much of each is needed, in
   portions or by the recipe's batch yield. Its food cost and shopping list are derived: sub-recipes
   are expanded to raw ingredients, quantities are combined, and yield is added back so the list
-  says how much to buy. Ported from Carisma Ops; `js/views/menus.js` differs only in a placeholder, two robustness fixes
-  and the Food / Wine switch at the top.
+  says how much to buy. Ported from Carisma Ops; `js/views/menus.js` differs only in a placeholder, two robustness fixes,
+  the Food / Wine switch at the top and the recipe search box.
 - A wine menu (WINE_MENUS + WINE_MENU_LINES) is a separate thing, under Menus > Wine: a list of wines,
   each line served by the `glass` (with a size in ml) or by the `bottle`, with its own sell price
   inc VAT. A wine can be on a menu both ways. Cost and GP are derived from the wine's current price

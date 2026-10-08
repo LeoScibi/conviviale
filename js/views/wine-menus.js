@@ -9,6 +9,7 @@ import { icons } from '../icons.js';
 import { esc, money, formDialog, toast, reportError, byName, sameName, matches, option, parkToasts } from '../ui.js';
 import { chosenPrice, ingredientUnit, usableUnitCost, packLabel, isWine, displayName } from '../costing.js';
 import { photoFor } from '../photos.js';
+import '../item-search.js';
 
 const GLASS_SIZES = [125, 175, 250, 75, 375, 500];
 // The order styles run in on a wine list; anything else comes after.
@@ -219,7 +220,7 @@ function ensureDialog() {
   dlg.addEventListener('click', onClick);
   dlg.addEventListener('change', e => {
     const t = e.target;
-    if (t.matches('[data-add-wine]')) { ds.wine = t.value; renderDetail(); } else if (t.matches('[data-add-size]')) { ds.size = Number(t.value); renderDetail(); } else if (t.matches('[data-sort]')) { ds.sort = t.value; renderDetail(); }
+    if (t.matches('[data-add-wine]')) { ds.wine = t.value; renderDetail(); if (ds.wine) dlg.querySelector('[data-add-glass]').focus(); } else if (t.matches('[data-add-size]')) { ds.size = Number(t.value); renderDetail(); } else if (t.matches('[data-sort]')) { ds.sort = t.value; renderDetail(); }
   });
   dlg.addEventListener('input', e => {
     if (e.target.matches('[data-add-glass]')) ds.glassPrice = e.target.value;
@@ -345,17 +346,20 @@ function tableHtml(b) {
 const costHint = (label, cost) => (cost == null ? `${label}: no cost yet`
   : `${label} costs ${money(cost)} (${RECIPE_DEFAULTS.TARGET_GP}% GP at ${money(suggestedPrice(cost))})`);
 
-function addHtml(b) {
+/** Wines that can still be added: active, and not on the menu already. */
+function addable(b) {
   const onMenu = new Set(b.rows.map(r => r.id));
-  const list = allWines().filter(w => w.ACTIVE && !onMenu.has(String(w.ING_ID)))
+  return allWines().filter(w => w.ACTIVE && !onMenu.has(String(w.ING_ID)))
     .sort((x, y) => byName(x, y) || String(x.VINTAGE).localeCompare(String(y.VINTAGE)));
+}
+
+function addHtml(b) {
+  const list = addable(b);
   const wine = ds.wine ? store.byId('INGREDIENTS', ds.wine) : null;
   return `
     <div class="wm-add">
-      <select data-add-wine aria-label="Wine">
-        <option value="">Add a wine…</option>
-        ${list.map(w => option(w.ING_ID, [displayName(w), w.PRODUCER].filter(Boolean).join(' · '), ds.wine)).join('')}
-      </select>
+      <item-search data-add-wine placeholder="Search wines to add…" aria-label="Wine to add" value="${esc(ds.wine)}"
+        empty-text="${list.length ? '' : 'Every wine is already on this menu.'}"></item-search>
       <label class="wm-price glass">${icons.glass}
         <select data-add-size aria-label="Glass size">${GLASS_SIZES.map(s => option(s, `${s} ml`, ds.size)).join('')}</select>
         <input type="number" min="0" step="0.01" inputmode="decimal" data-add-glass value="${esc(ds.glassPrice)}" placeholder="Glass £" aria-label="Glass sell price, including VAT">
@@ -399,6 +403,9 @@ function renderDetail() {
       <div class="lines wm-table">${tableHtml(b)}</div>
       ${addHtml(b)}
     </section>`;
+  dlg.querySelector('[data-add-wine]').items = addable(b).map(w => ({
+    value: w.ING_ID, label: displayName(w), sub: [w.PRODUCER, w.STYLE].filter(Boolean).join(' · '),
+  }));
 }
 
 function addWine() {
