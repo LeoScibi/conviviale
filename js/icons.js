@@ -11,5 +11,6 @@ export const icons = {
   up: svg('<path d="m6 15 6-6 6 6"/>'),
   down: svg('<path d="m6 9 6 6 6-6"/>'),
   glass: svg('<path d="M7 3h10l-.5 6a4.5 4.5 0 0 1-9 0zM12 13.5V21M8.5 21h7M6.8 8h10.4"/>'),
+  bottle: svg('<path d="M10 2h4v4.5l2 3V20a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2V9.5l2-3zM8 13h8M8 17h8"/>'),
   clock: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
 };

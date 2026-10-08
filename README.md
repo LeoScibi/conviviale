@@ -118,7 +118,13 @@ full-screen forms. It can be added to the home screen and opens like an app.
 - A menu (MENUS + MENU_LINES) is a named list of recipes and how much of each is needed, in
   portions or by the recipe's batch yield. Its food cost and shopping list are derived: sub-recipes
   are expanded to raw ingredients, quantities are combined, and yield is added back so the list
-  says how much to buy. Ported from Carisma Ops; `js/views/menus.js` differs only in a placeholder and two robustness fixes.
+  says how much to buy. Ported from Carisma Ops; `js/views/menus.js` differs only in a placeholder, two robustness fixes
+  and the Food / Wine switch at the top.
+- A wine menu (WINE_MENUS + WINE_MENU_LINES) is a separate thing, under Menus > Wine: a list of wines,
+  each line served by the `glass` (with a size in ml) or by the `bottle`, with its own sell price
+  inc VAT. A wine can be on a menu both ways. Cost and GP are derived from the wine's current price
+  (a glass by volume, a bottle as the supplier's pack); nothing derived is stored. The list can be
+  filtered to glass or bottle and sorted by style, name, producer, price or GP.
 
 ## Roadmap
 
@@ -127,4 +133,5 @@ full-screen forms. It can be added to the home screen and opens like an app.
   scaling, paste importer. Wine by the glass is a drink recipe using a bottle ingredient (e.g. 175 ml of a 750 ml bottle).
 - **Menus (done):** menu builder with estimated food cost and a combined shopping list.
 - **Wines (done):** wine list with producer, vintage, region, grape and style, bottle cost and cost per glass.
+- **Wine menus (done):** wines by the glass or bottle with sell prices, GP, sorting and a copyable list.
 - **Phase 3:** inventory: stock counts, deliveries, waste.

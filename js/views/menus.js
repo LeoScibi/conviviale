@@ -9,6 +9,7 @@ import { chosenPrice, ingredientUnit, yieldFraction, packLabel, unitCost } from 
 import { createCoster, ingredientFamily } from '../recipe-cost.js';
 import { BASE, unitsFor, toBase, normUnit, fmtQty } from '../units.js';
 import { supplierName } from './prices.js';
+import { menuTabs } from './wine-menus.js';
 
 const state = { q: '' };
 let root;
@@ -23,6 +24,7 @@ export function render(el, param) {
       </div>
       <button class="btn primary add-desktop" data-add>${icons.plus} New menu</button>
     </div>
+    ${menuTabs('food')}
     <div class="toolbar">
       <label class="search-wrap">${icons.search}
         <input type="search" class="search" data-q value="${esc(state.q)}" placeholder="Search menus" aria-label="Search menus">

@@ -350,6 +350,41 @@ fieldset.field legend { padding: 0; margin-bottom: 8px; }
 .photo-pick:focus-within { outline: 2px solid var(--olive); outline-offset: 2px; }
 .photo-row { grid-template-columns: 52px 1fr; }
 .photo-row select { width: 100%; }
+/* ---------- Wine menus ---------- */
+.segs { display: inline-flex; padding: 3px; margin-bottom: 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
+.seg { padding: 7px 18px; border-radius: 999px; font-size: 14px; font-weight: 600; color: var(--muted); text-decoration: none; }
+.seg.on { background: var(--olive); color: #fff; }
+.serve-count .icon { width: 15px; height: 15px; vertical-align: -3px; margin-right: 4px; }
+.serve-badge { display: grid; justify-items: center; gap: 1px; width: 44px; padding: 5px 0 4px; border-radius: 10px; flex-shrink: 0; }
+.serve-badge .icon { width: 20px; height: 20px; }
+.serve-badge small { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.serve-badge.glass { background: var(--blush-soft); color: var(--amber); }
+.serve-badge.bottle { background: var(--olive); color: #fff; }
+.wm-line { display: grid; grid-template-columns: auto auto 1fr auto; align-items: center; gap: 10px; width: 100%; min-height: 60px;
+  padding: 8px 12px 8px 8px; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+.wm-line:not(:has(.wine-thumb)) { grid-template-columns: auto 1fr auto; }
+.wm-line:hover { border-color: var(--cream); }
+.wine-thumb.sm { width: 32px; height: 44px; border-radius: 6px; }
+.wm-group { margin: 12px 0 2px; font-family: var(--display); text-transform: uppercase; letter-spacing: .14em; font-size: 12px; color: var(--olive); }
+.wm-group:first-child { margin-top: 0; }
+.wm-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.wm-chips { display: flex; gap: 6px; }
+.wm-chip { font: inherit; font-size: 13px; min-height: 36px; padding: 6px 12px; color: inherit; }
+.wm-chip .icon { width: 16px; height: 16px; }
+.wm-chip.on { background: var(--olive); border-color: var(--olive); color: #fff; }
+.wm-sort { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.wm-sort select { min-height: 36px; padding: 6px 28px 6px 10px; font-size: 13px; border-radius: 999px; }
+.wm-add { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: center; margin-top: 12px; }
+.wm-add > select[data-add-wine], .wm-add > .serve-toggle, .wm-add > .btn { grid-column: 1 / -1; }
+.wm-add .unit { font-size: 13px; color: var(--muted); }
+.serve-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.serve-toggle button { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; border: 1px solid var(--line);
+  border-radius: 12px; background: var(--surface); font: inherit; font-weight: 600; color: var(--muted); cursor: pointer; }
+.serve-toggle button[aria-pressed="true"] { background: var(--olive); border-color: var(--olive); color: #fff; }
+@media (min-width: 820px) {
+  .wm-add { grid-template-columns: 1.6fr 200px 110px 120px auto; }
+  .wm-add > select[data-add-wine], .wm-add > .serve-toggle, .wm-add > .btn { grid-column: auto; }
+}
 .wine-strays { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 16px; }
 .used-in { margin-top: 14px; }
 .method { white-space: pre-wrap; font-size: 14px; line-height: 1.6; }

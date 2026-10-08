@@ -79,6 +79,19 @@ export const SCHEMA = {
     headers: ['LINE_ID', 'MENU_ID', 'RECIPE_ID', 'QTY', 'UNIT'],
     numbers: ['QTY'],
   },
+  // A wine menu lists wines by the glass or by the bottle (SERVE), each with its own sell price
+  // (inc VAT). SIZE_ML is the glass size; a bottle is whatever pack the supplier sells.
+  WINE_MENUS: {
+    idField: 'MENU_ID',
+    idPrefix: 'WM',
+    headers: ['MENU_ID', 'NAME', 'NOTES'],
+  },
+  WINE_MENU_LINES: {
+    idField: 'LINE_ID',
+    idPrefix: 'WML',
+    headers: ['LINE_ID', 'MENU_ID', 'ING_ID', 'SERVE', 'SIZE_ML', 'SELL_PRICE'],
+    numbers: ['SIZE_ML', 'SELL_PRICE'],
+  },
   // A small photo per item (wines for now), kept as a JPEG data URL in IMAGE. See js/photos.js.
   PHOTOS: {
     idField: 'PHOTO_ID',

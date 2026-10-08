@@ -9,8 +9,11 @@ import * as wines from './views/wines.js';
 import * as suppliers from './views/suppliers.js';
 import * as recipes from './views/recipes.js';
 import * as menus from './views/menus.js';
+import * as winemenus from './views/wine-menus.js';
 
-const ROUTES = { ingredients, wines, suppliers, recipes, menus };
+const ROUTES = { ingredients, wines, suppliers, recipes, menus, winemenus };
+// Routes without a tab of their own light up the tab they live under.
+const NAV_FOR = { winemenus: 'menus' };
 const DEFAULT_ROUTE = 'ingredients';
 
 const $ = sel => document.querySelector(sel);
@@ -44,9 +47,10 @@ function route() {
   // Leaving a section closes anything it had open.
   if (currentRoute && currentRoute !== name) document.querySelectorAll('dialog[open]').forEach(d => d.close());
   currentRoute = name || DEFAULT_ROUTE;
+  const tab = NAV_FOR[currentRoute] || currentRoute;
   document.querySelectorAll('.nav a[data-route]').forEach(a => {
-    a.classList.toggle('active', a.dataset.route === currentRoute);
-    if (a.dataset.route === currentRoute) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    a.classList.toggle('active', a.dataset.route === tab);
+    if (a.dataset.route === tab) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
   view.render($('#view'), param);
 }
