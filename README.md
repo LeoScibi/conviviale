@@ -123,8 +123,10 @@ full-screen forms. It can be added to the home screen and opens like an app.
 - A wine menu (WINE_MENUS + WINE_MENU_LINES) is a separate thing, under Menus > Wine: a list of wines,
   each line served by the `glass` (with a size in ml) or by the `bottle`, with its own sell price
   inc VAT. A wine can be on a menu both ways. Cost and GP are derived from the wine's current price
-  (a glass by volume, a bottle as the supplier's pack); nothing derived is stored. The list can be
-  filtered to glass or bottle and sorted by style, name, producer, price or GP.
+  (a glass by volume, a bottle as the supplier's pack); nothing derived is stored. Each serve is its
+  own row in the sheet, but the app shows one row per wine with Glass and Bottle columns, and a +
+  in an empty column adds that serve. The list filters to wines with a glass or bottle only, and
+  sorts by style, name, producer, bottle or glass price, or GP.
 
 ## Roadmap
 

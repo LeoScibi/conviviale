@@ -1,6 +1,7 @@
-// Wine menus: a named list of wines, each offered by the glass or by the bottle at a sell price.
-// Unlike food menus there are no recipes or quantities; cost and GP come straight from the wine's
-// current supplier price. The same wine can be listed twice, once per serve.
+// Wine menus: a named list of wines, each offered by the glass, by the bottle, or both, at its own
+// sell price. Unlike food menus there are no recipes or quantities; cost and GP come straight from
+// the wine's current supplier price. Each serve is stored as its own line, and shown as one row
+// per wine with a Glass and a Bottle column.
 
 import * as store from '../store.js';
 import { RECIPE_DEFAULTS } from '../config.js';
@@ -15,7 +16,8 @@ const LIST_ORDER = ['Sparkling', 'White', 'Orange', 'Rosé', 'Red', 'Sweet', 'Fo
 const SERVES = { glass: 'By the glass', bottle: 'By the bottle' };
 const SORTS = [
   ['style', 'Style, then name'], ['name', 'Name'], ['producer', 'Producer'],
-  ['price-asc', 'Price: low to high'], ['price-desc', 'Price: high to low'], ['gp-asc', 'GP: lowest first'],
+  ['bottle-asc', 'Bottle price: low to high'], ['bottle-desc', 'Bottle price: high to low'],
+  ['glass-asc', 'Glass price: low to high'], ['gp-asc', 'GP: lowest first'],
 ];
 
 const state = { q: '' };
@@ -27,7 +29,6 @@ export function menuTabs(active) {
   return `<nav class="segs" aria-label="Menu type">${tab('food', '#/menus', 'Food')}${tab('wine', '#/winemenus', 'Wine')}</nav>`;
 }
 
-const serveIcon = serve => (serve === 'bottle' ? icons.bottle : icons.glass);
 const serveOf = l => (String(l.SERVE).toLowerCase() === 'bottle' ? 'bottle' : 'glass');
 const linesOf = menuId => store.rows('WINE_MENU_LINES').filter(l => String(l.MENU_ID) === String(menuId));
 const allWines = () => store.rows('INGREDIENTS').filter(isWine);
@@ -60,18 +61,28 @@ function build(menuId) {
     const sell = line.SELL_PRICE === '' ? null : Number(line.SELL_PRICE);
     return { line, wine, serve, cost, sell, gp: gpPct(cost, sell) };
   });
+  // One row per wine, with its glass and bottle lines side by side.
+  const byWine = new Map();
+  for (const l of lines) {
+    const id = String(l.line.ING_ID);
+    if (!byWine.has(id)) byWine.set(id, { id, wine: l.wine, glass: [], bottle: [] });
+    byWine.get(id)[l.serve].push(l);
+  }
+  const rows = [...byWine.values()];
+  rows.forEach(r => r.glass.sort((x, y) => Number(x.line.SIZE_ML) - Number(y.line.SIZE_ML)));
   const gps = lines.map(l => l.gp).filter(g => g != null);
   return {
-    lines,
-    glass: lines.filter(l => l.serve === 'glass').length,
-    bottle: lines.filter(l => l.serve === 'bottle').length,
-    avgGp: gps.length ? gps.reduce((a, b) => a + b, 0) / gps.length : null,
+    lines, rows,
+    withGlass: rows.filter(r => r.glass.length).length,
+    bottleOnly: rows.filter(r => !r.glass.length).length,
+    avgGp: gps.length ? gps.reduce((x, y) => x + y, 0) / gps.length : null,
     unpriced: lines.filter(l => l.sell == null).length,
     uncosted: lines.filter(l => l.wine && l.cost == null).length,
   };
 }
 
-const countsText = b => [b.glass && `${b.glass} by the glass`, b.bottle && `${b.bottle} by the bottle`].filter(Boolean).join(' · ');
+const countsText = b => [`${b.rows.length} wine${b.rows.length === 1 ? '' : 's'}`, b.withGlass && `${b.withGlass} by the glass`,
+  b.bottleOnly && `${b.bottleOnly} bottle only`].filter(Boolean).join(' · ');
 
 export function render(el, param) {
   root = el;
@@ -119,20 +130,20 @@ function renderList() {
 
   root.querySelector('[data-list]').innerHTML = `<div class="cards">${list.map(m => {
     const b = build(m.MENU_ID);
-    const n = b.lines.length;
+    const n = b.rows.length;
     return `
     <article class="card">
       <button class="card-hit" data-id="${esc(m.MENU_ID)}" aria-label="Open ${esc(m.NAME)}"></button>
       <div class="card-top">
         <div>
           <div class="card-name">${esc(m.NAME)}</div>
-          <div class="card-sub">${n ? `${n} line${n === 1 ? '' : 's'}` : 'No wines yet'}</div>
+          <div class="card-sub">${n ? `${n} wine${n === 1 ? '' : 's'}` : 'No wines yet'}</div>
         </div>
         <div class="card-figure"><strong>${b.avgGp == null ? '—' : `${b.avgGp.toFixed(0)}%`}</strong><span>average GP</span></div>
       </div>
       <div class="card-meta">
-        ${b.glass ? `<span class="serve-count">${icons.glass}<b>${b.glass}</b> by the glass</span>` : ''}
-        ${b.bottle ? `<span class="serve-count">${icons.bottle}<b>${b.bottle}</b> by the bottle</span>` : ''}
+        ${b.withGlass ? `<span class="serve-count">${icons.glass}<b>${b.withGlass}</b> by the glass</span>` : ''}
+        ${b.bottleOnly ? `<span class="serve-count">${icons.bottle}<b>${b.bottleOnly}</b> bottle only</span>` : ''}
         ${b.unpriced ? `<span class="warn">${b.unpriced} without a price</span>` : ''}
         ${m.NOTES ? `<span>${esc(m.NOTES)}</span>` : ''}
       </div>
@@ -173,7 +184,7 @@ function openMenuForm(menu) {
 // ============================================================ menu sheet
 
 let dlg = null;
-const ds = { id: null, wine: '', serve: 'glass', size: 125, price: '', sort: 'style', show: '', busy: false };
+const ds = { id: null, wine: '', size: 125, glassPrice: '', bottlePrice: '', sort: 'style', show: '', busy: false };
 
 function ensureDialog() {
   if (dlg) return;
@@ -210,9 +221,12 @@ function ensureDialog() {
     const t = e.target;
     if (t.matches('[data-add-wine]')) { ds.wine = t.value; renderDetail(); } else if (t.matches('[data-add-size]')) { ds.size = Number(t.value); renderDetail(); } else if (t.matches('[data-sort]')) { ds.sort = t.value; renderDetail(); }
   });
-  dlg.addEventListener('input', e => { if (e.target.matches('[data-add-price]')) ds.price = e.target.value; });
+  dlg.addEventListener('input', e => {
+    if (e.target.matches('[data-add-glass]')) ds.glassPrice = e.target.value;
+    else if (e.target.matches('[data-add-bottle]')) ds.bottlePrice = e.target.value;
+  });
   dlg.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && e.target.matches('[data-add-price]')) { e.preventDefault(); addLine(); }
+    if (e.key === 'Enter' && e.target.matches('[data-add-glass], [data-add-bottle]')) { e.preventDefault(); addWine(); }
   });
 }
 
@@ -228,7 +242,7 @@ function openDetail(id) {
     return;
   }
   ensureDialog();
-  if (ds.id !== id) Object.assign(ds, { id, wine: '', price: '', show: '' });
+  if (ds.id !== id) Object.assign(ds, { id, wine: '', glassPrice: '', bottlePrice: '', show: '' });
   if (!dlg.open) dlg.showModal();
   parkToasts();
   renderDetail();
@@ -259,79 +273,101 @@ const styleRank = w => {
   const i = LIST_ORDER.indexOf(String(w?.STYLE ?? '').trim());
   return i < 0 ? LIST_ORDER.length : i;
 };
-const nameOf = l => (l.wine ? displayName(l.wine) : `${l.line.ING_ID} (deleted)`);
-const byWine = (a, b) => nameOf(a).localeCompare(nameOf(b), 'en-GB', { sensitivity: 'base' }) || (a.serve === b.serve ? 0 : a.serve === 'glass' ? -1 : 1);
-// Lines with nothing to compare (no price, no GP) go last whichever way the sort runs.
+const nameOf = r => (r.wine ? displayName(r.wine) : `${r.id} (deleted)`);
+const byWine = (a, b) => nameOf(a).localeCompare(nameOf(b), 'en-GB', { sensitivity: 'base' });
+const lowest = (list, key) => list.map(l => l[key]).filter(v => v != null).reduce((m, v) => (m == null || v < m ? v : m), null);
+// Rows with nothing to compare (no price, no GP) go last whichever way the sort runs.
 const num = (v, dir) => (v == null ? Infinity : v * dir);
 
 const COMPARE = {
   style: (a, b) => styleRank(a.wine) - styleRank(b.wine) || byWine(a, b),
   name: byWine,
   producer: (a, b) => String(a.wine?.PRODUCER ?? '').localeCompare(String(b.wine?.PRODUCER ?? ''), 'en-GB', { sensitivity: 'base' }) || byWine(a, b),
-  'price-asc': (a, b) => num(a.sell, 1) - num(b.sell, 1) || byWine(a, b),
-  'price-desc': (a, b) => num(a.sell, -1) - num(b.sell, -1) || byWine(a, b),
-  'gp-asc': (a, b) => num(a.gp, 1) - num(b.gp, 1) || byWine(a, b),
+  'bottle-asc': (a, b) => num(lowest(a.bottle, 'sell'), 1) - num(lowest(b.bottle, 'sell'), 1) || byWine(a, b),
+  'bottle-desc': (a, b) => num(lowest(a.bottle, 'sell'), -1) - num(lowest(b.bottle, 'sell'), -1) || byWine(a, b),
+  'glass-asc': (a, b) => num(lowest(a.glass, 'sell'), 1) - num(lowest(b.glass, 'sell'), 1) || byWine(a, b),
+  'gp-asc': (a, b) => num(lowest([...a.glass, ...a.bottle], 'gp'), 1) - num(lowest([...b.glass, ...b.bottle], 'gp'), 1) || byWine(a, b),
 };
 
-function lineHtml(l) {
-  const photo = l.wine ? photoFor(l.wine.ING_ID) : '';
-  const size = l.serve === 'glass' ? `${Number(l.line.SIZE_ML) || '?'} ml` : (chosenPrice(l.wine)?.price ? packLabel(chosenPrice(l.wine).price.PACK_SIZE, chosenPrice(l.wine).price.PACK_UNIT) : 'bottle');
-  const sub = [l.wine?.PRODUCER, size, l.cost == null ? null : `cost ${money(l.cost)}`].filter(Boolean).map(esc).join(' · ');
-  return `
-    <button type="button" class="line wm-line${l.wine && l.sell != null ? '' : ' flag'}" data-line="${esc(l.line.LINE_ID)}" aria-label="Edit ${esc(nameOf(l))}, ${SERVES[l.serve].toLowerCase()}">
-      <span class="serve-badge ${l.serve}" title="${SERVES[l.serve]}">${serveIcon(l.serve)}<small>${l.serve === 'glass' ? 'Glass' : 'Bottle'}</small></span>
-      ${photo ? `<span class="wine-thumb sm"><img src="${photo}" alt="" loading="lazy"></span>` : ''}
-      <span class="line-text">
-        <span class="line-name">${esc(nameOf(l))}</span>
-        <span class="line-sub">${sub}${l.wine && l.cost == null ? ' <span class="warn">no cost</span>' : ''}</span>
-      </span>
-      <span class="line-cost">${l.sell == null ? '<span class="warn">No price</span>' : money(l.sell)}${
-        l.gp == null ? '' : `<small class="${l.gp >= RECIPE_DEFAULTS.TARGET_GP ? '' : 'warn'}">GP ${l.gp.toFixed(0)}%</small>`}</span>
-    </button>`;
-}
+const SHOW = { '': () => true, glass: r => r.glass.length > 0, 'bottle-only': r => !r.glass.length };
 
-function linesHtml(b) {
-  const shown = b.lines.filter(l => !ds.show || l.serve === ds.show).sort(COMPARE[ds.sort] || COMPARE.style);
-  if (!b.lines.length) return '<p class="muted small lines-empty">Nothing on this menu yet. Add a wine below.</p>';
-  if (!shown.length) return `<p class="muted small lines-empty">Nothing ${SERVES[ds.show].toLowerCase()} on this menu.</p>`;
-  if (ds.sort !== 'style') return shown.map(lineHtml).join('');
-  // Sorted by style: break the list into Sparkling, White, Red… like a printed wine list.
-  let style = null;
-  return shown.map(l => {
-    const s = String(l.wine?.STYLE ?? '').trim() || 'Other';
-    const head = s === style ? '' : `<h4 class="wm-group">${esc(s)}</h4>`;
-    style = s;
-    return head + lineHtml(l);
+/** One serve of a wine in its column: the price to tap and edit, or a "+" to add that serve. */
+function cellHtml(r, serve) {
+  const label = serve === 'glass' ? 'glass' : 'bottle';
+  if (!r[serve].length) {
+    return r.wine
+      ? `<button type="button" class="wm-cell add" data-quick="${serve}" data-wine="${esc(r.id)}" aria-label="Add ${esc(nameOf(r))} by the ${label}">${icons.plus}</button>`
+      : '<span class="wm-cell none">—</span>';
+  }
+  return r[serve].map(l => {
+    const gp = l.gp == null ? '' : `<span class="${l.gp >= RECIPE_DEFAULTS.TARGET_GP ? '' : 'warn'}">GP ${l.gp.toFixed(0)}%</span>`;
+    const size = serve === 'glass' ? `${Number(l.line.SIZE_ML) || '?'} ml` : '';
+    return `
+      <button type="button" class="wm-cell ${serve}" data-line="${esc(l.line.LINE_ID)}" aria-label="Edit ${esc(nameOf(r))} by the ${label}">
+        <b>${l.sell == null ? 'No price' : money(l.sell)}</b>
+        <small>${[size, gp].filter(Boolean).join(' · ') || (l.cost == null ? 'no cost' : '')}</small>
+      </button>`;
   }).join('');
 }
 
-function serveToggle(current, attr) {
-  return `<div class="serve-toggle" role="group" aria-label="Serve">${Object.keys(SERVES).map(s => `
-    <button type="button" ${attr}="${s}" aria-pressed="${current === s}">${serveIcon(s)}<span>${s === 'glass' ? 'Glass' : 'Bottle'}</span></button>`).join('')}</div>`;
+function rowHtml(r) {
+  const photo = r.wine ? photoFor(r.wine.ING_ID) : '';
+  return `
+    <div class="line wm-row">
+      <span class="wm-wine">
+        ${photo ? `<span class="wine-thumb sm"><img src="${photo}" alt="" loading="lazy"></span>` : ''}
+        <span class="line-text">
+          <span class="line-name">${esc(nameOf(r))}</span>
+          <span class="line-sub">${esc(r.wine?.PRODUCER ?? '')}</span>
+        </span>
+      </span>
+      <span class="wm-cells">${cellHtml(r, 'glass')}</span>
+      <span class="wm-cells">${cellHtml(r, 'bottle')}</span>
+    </div>`;
 }
 
-function addHtml() {
-  const list = allWines().filter(w => w.ACTIVE)
-    .sort((a, b) => byName(a, b) || String(a.VINTAGE).localeCompare(String(b.VINTAGE)));
+function tableHtml(b) {
+  if (!b.rows.length) return '<p class="muted small lines-empty">Nothing on this menu yet. Add a wine below.</p>';
+  const shown = b.rows.filter(SHOW[ds.show] || SHOW['']).sort(COMPARE[ds.sort] || COMPARE.style);
+  if (!shown.length) return '<p class="muted small lines-empty">No wines match this filter.</p>';
+  const head = `<div class="wm-head"><span>Wine</span><span>${icons.glass}Glass</span><span>${icons.bottle}Bottle</span></div>`;
+  if (ds.sort !== 'style') return head + shown.map(rowHtml).join('');
+  // Sorted by style: break the list into Sparkling, White, Red… like a printed wine list.
+  let style = null;
+  return head + shown.map(r => {
+    const s = String(r.wine?.STYLE ?? '').trim() || 'Other';
+    const group = s === style ? '' : `<h4 class="wm-group">${esc(s)}</h4>`;
+    style = s;
+    return group + rowHtml(r);
+  }).join('');
+}
+
+const costHint = (label, cost) => (cost == null ? `${label}: no cost yet`
+  : `${label} costs ${money(cost)} (${RECIPE_DEFAULTS.TARGET_GP}% GP at ${money(suggestedPrice(cost))})`);
+
+function addHtml(b) {
+  const onMenu = new Set(b.rows.map(r => r.id));
+  const list = allWines().filter(w => w.ACTIVE && !onMenu.has(String(w.ING_ID)))
+    .sort((x, y) => byName(x, y) || String(x.VINTAGE).localeCompare(String(y.VINTAGE)));
   const wine = ds.wine ? store.byId('INGREDIENTS', ds.wine) : null;
-  const cost = serveCost(wine, ds.serve, ds.size);
-  const hint = !wine ? ''
-    : cost == null ? `<span class="warn">${ds.serve === 'glass' && ingredientUnit(wine) !== 'ml' ? 'This wine isn’t measured in ml, so a glass can’t be costed.' : 'No supplier price yet, so there is no cost or GP.'}</span>`
-      : `Costs ${money(cost)}. ${RECIPE_DEFAULTS.TARGET_GP}% GP at ${money(suggestedPrice(cost))} inc VAT.`;
   return `
     <div class="wm-add">
       <select data-add-wine aria-label="Wine">
         <option value="">Add a wine…</option>
         ${list.map(w => option(w.ING_ID, [displayName(w), w.PRODUCER].filter(Boolean).join(' · '), ds.wine)).join('')}
       </select>
-      ${serveToggle(ds.serve, 'data-add-serve')}
-      ${ds.serve === 'glass'
-        ? `<select data-add-size aria-label="Glass size">${GLASS_SIZES.map(s => option(s, `${s} ml`, ds.size)).join('')}</select>`
-        : '<span class="unit">whole bottle</span>'}
-      <input type="number" min="0" step="0.01" inputmode="decimal" data-add-price value="${esc(ds.price)}" placeholder="Sell price £" aria-label="Sell price, including VAT">
+      <label class="wm-price glass">${icons.glass}
+        <select data-add-size aria-label="Glass size">${GLASS_SIZES.map(s => option(s, `${s} ml`, ds.size)).join('')}</select>
+        <input type="number" min="0" step="0.01" inputmode="decimal" data-add-glass value="${esc(ds.glassPrice)}" placeholder="Glass £" aria-label="Glass sell price, including VAT">
+      </label>
+      <label class="wm-price bottle">${icons.bottle}
+        <input type="number" min="0" step="0.01" inputmode="decimal" data-add-bottle value="${esc(ds.bottlePrice)}" placeholder="Bottle £" aria-label="Bottle sell price, including VAT">
+      </label>
       <button type="button" class="btn primary" data-act="add"${wine ? '' : ' disabled'}>${icons.plus} Add</button>
     </div>
-    ${hint ? `<p class="hint">${hint}</p>` : ''}`;
+    <p class="hint">${wine
+      ? `${costHint(`${ds.size} ml glass`, serveCost(wine, 'glass', ds.size))} · ${costHint('Bottle', serveCost(wine, 'bottle'))}. Prices include VAT.`
+      : 'Fill in the glass price, the bottle price, or both. Leave the glass blank for bottle only; you can add it later with the + in its column.'}</p>`;
 }
 
 function renderDetail() {
@@ -339,8 +375,8 @@ function renderDetail() {
   const menu = store.byId('WINE_MENUS', ds.id);
   if (!menu) { closeDetail(); return; }
   const b = build(ds.id);
-  const n = b.lines.length;
-  dlg.querySelector('[data-d-overline]').textContent = `Wine menu · ${n} line${n === 1 ? '' : 's'}`;
+  const n = b.rows.length;
+  dlg.querySelector('[data-d-overline]').textContent = `Wine menu · ${n} wine${n === 1 ? '' : 's'}`;
   dlg.querySelector('[data-d-title]').textContent = menu.NAME;
   const chip = (key, label, icon = '') => `<button type="button" class="toggle-chip wm-chip${ds.show === key ? ' on' : ''}" data-show="${key}" aria-pressed="${ds.show === key}">${icon}${label}</button>`;
   dlg.querySelector('[data-d-body]').innerHTML = `
@@ -349,7 +385,7 @@ function renderDetail() {
         <div class="stat-big">
           <span class="overline">Average GP</span>
           <strong>${b.avgGp == null ? '—' : `${b.avgGp.toFixed(0)}%`}</strong>
-          <small>${countsText(b) || 'No wines yet'}${b.unpriced ? ` · ${b.unpriced} without a sell price` : ''}${b.uncosted ? ` · ${b.uncosted} without a cost` : ''}</small>
+          <small>${n ? countsText(b) : 'No wines yet'}${b.unpriced ? ` · ${b.unpriced} without a sell price` : ''}${b.uncosted ? ` · ${b.uncosted} without a cost` : ''}</small>
         </div>
       </div>
       ${menu.NOTES ? `<p class="small muted method">${esc(menu.NOTES)}</p>` : ''}
@@ -357,63 +393,73 @@ function renderDetail() {
     <section class="detail-block">
       <h3 class="section-title">Wines on this menu</h3>
       ${n ? `<div class="wm-tools">
-        <div class="wm-chips">${chip('', `All ${n}`)}${chip('glass', `Glass ${b.glass}`, icons.glass)}${chip('bottle', `Bottle ${b.bottle}`, icons.bottle)}</div>
+        <div class="wm-chips">${chip('', `All ${n}`)}${chip('glass', `Glass ${b.withGlass}`, icons.glass)}${chip('bottle-only', `Bottle only ${b.bottleOnly}`, icons.bottle)}</div>
         <label class="wm-sort"><span>Sort</span><select data-sort aria-label="Sort wines">${SORTS.map(([k, label]) => option(k, label, ds.sort)).join('')}</select></label>
       </div>` : ''}
-      <div class="lines">${linesHtml(b)}</div>
-      ${addHtml()}
+      <div class="lines wm-table">${tableHtml(b)}</div>
+      ${addHtml(b)}
     </section>`;
 }
 
-function addLine() {
+function addWine() {
   if (!ds.wine) return;
   const wine = store.byId('INGREDIENTS', ds.wine);
-  const price = ds.price === '' ? '' : Number(ds.price);
-  if (price !== '' && !(price >= 0)) { toast('Enter the sell price as a number.', 'error'); return; }
-  const size = ds.serve === 'glass' ? ds.size : '';
-  const dup = linesOf(ds.id).find(l => String(l.ING_ID) === String(ds.wine) && serveOf(l) === ds.serve && Number(l.SIZE_ML || 0) === Number(size || 0));
-  if (dup) { toast(`${displayName(wine)} is already on this menu ${SERVES[ds.serve].toLowerCase()}. Tap it to change the price.`, 'error'); return; }
-  const record = { MENU_ID: ds.id, ING_ID: ds.wine, SERVE: ds.serve, SIZE_ML: size, SELL_PRICE: price };
+  const prices = [ds.glassPrice, ds.bottlePrice].map(v => (String(v).trim() === '' ? '' : Number(v)));
+  if (prices.some(v => v !== '' && !(v >= 0))) { toast('Enter the sell prices as numbers.', 'error'); return; }
+  const [glass, bottle] = prices;
+  const records = [];
+  if (glass !== '') records.push({ MENU_ID: ds.id, ING_ID: ds.wine, SERVE: 'glass', SIZE_ML: ds.size, SELL_PRICE: glass });
+  // With no prices at all the wine goes on as a bottle, to be priced later.
+  if (bottle !== '' || glass === '') records.push({ MENU_ID: ds.id, ING_ID: ds.wine, SERVE: 'bottle', SIZE_ML: '', SELL_PRICE: bottle });
   run(async () => {
-    await store.create('WINE_MENU_LINES', record);
-    Object.assign(ds, { wine: '', price: '' });
+    await store.createMany('WINE_MENU_LINES', records);
+    Object.assign(ds, { wine: '', glassPrice: '', bottlePrice: '' });
   }, `Added ${displayName(wine)}`);
 }
 
-function openLineForm(lineId) {
-  const line = store.byId('WINE_MENU_LINES', lineId);
-  if (!line) return;
-  const wine = store.byId('INGREDIENTS', line.ING_ID);
+/**
+ * Add or edit one serve of a wine: pass `lineId` to edit an existing line, or `ingId` + `serve`
+ * to add the missing glass or bottle to a wine already on the menu.
+ */
+function openLineForm({ lineId = null, ingId = null, serve = null }) {
+  const line = lineId ? store.byId('WINE_MENU_LINES', lineId) : null;
+  if (lineId && !line) return;
+  const menuId = ds.id;
+  const wineId = line ? line.ING_ID : ingId;
+  const kind = line ? serveOf(line) : serve;
+  const wine = store.byId('INGREDIENTS', wineId);
   const name = wine ? displayName(wine) : 'this wine';
+  // Price first, so it has the cursor: the size is usually right already.
+  const fields = [{ name: 'SELL_PRICE', label: `${kind === 'glass' ? 'Glass' : 'Bottle'} price £`, type: 'number', min: 0, step: 0.01,
+    inputmode: 'decimal', half: kind === 'glass', wide: kind !== 'glass', hint: 'Including VAT' }];
+  if (kind === 'glass') fields.push({ name: 'SIZE_ML', label: 'Glass size', type: 'select', options: GLASS_SIZES.map(s => [s, `${s} ml`]), half: true });
+
   formDialog({
-    title: name,
-    fields: [
-      { name: 'SERVE', label: 'Served', type: 'select', options: Object.entries(SERVES), half: true },
-      { name: 'SIZE_ML', label: 'Glass size', type: 'select', options: GLASS_SIZES.map(s => [s, `${s} ml`]), half: true, hint: 'Ignored for a bottle' },
-      { name: 'SELL_PRICE', label: 'Sell price £', type: 'number', min: 0, step: 0.01, inputmode: 'decimal', wide: true, hint: 'Including VAT' },
-    ],
-    values: { SERVE: serveOf(line), SIZE_ML: line.SIZE_ML || 125, SELL_PRICE: line.SELL_PRICE },
-    submitLabel: 'Save',
+    title: `${name} · ${SERVES[kind].toLowerCase()}`,
+    fields,
+    values: line ? { SIZE_ML: line.SIZE_ML || 125, SELL_PRICE: line.SELL_PRICE } : { SIZE_ML: 125 },
+    submitLabel: line ? 'Save' : `Add ${kind}`,
     extraHtml: '<p class="cost-preview" data-preview aria-live="polite"></p>',
     onChange: (d, form) => {
-      const cost = serveCost(wine, d.SERVE, d.SIZE_ML);
+      const cost = serveCost(wine, kind, d.SIZE_ML);
       const gp = gpPct(cost, d.SELL_PRICE);
       form.querySelector('[data-preview]').innerHTML = cost == null ? 'No cost for this serve yet.'
         : `Costs ${money(cost)}${gp == null ? '' : ` · <strong>GP ${gp.toFixed(0)}%</strong>`} · ${RECIPE_DEFAULTS.TARGET_GP}% GP at ${money(suggestedPrice(cost))}`;
     },
     deleteLabel: 'Remove',
-    onDelete: async () => {
+    onDelete: line ? async () => {
       await store.remove({ WINE_MENU_LINES: [lineId] });
-      toast(`Removed ${name}`);
+      toast(`Removed ${name} ${SERVES[kind].toLowerCase()}`);
       refresh();
-    },
+    } : null,
     onSubmit: async d => {
-      const size = d.SERVE === 'glass' ? Number(d.SIZE_ML) : '';
-      const dup = linesOf(line.MENU_ID).find(l => l.LINE_ID !== lineId && String(l.ING_ID) === String(line.ING_ID)
-        && serveOf(l) === d.SERVE && Number(l.SIZE_ML || 0) === Number(size || 0));
-      if (dup) throw new Error(`${name} is already on this menu ${SERVES[d.SERVE].toLowerCase()}.`);
-      await store.update('WINE_MENU_LINES', lineId, { SERVE: d.SERVE, SIZE_ML: size, SELL_PRICE: d.SELL_PRICE });
-      toast(`Saved ${name}`);
+      const size = kind === 'glass' ? Number(d.SIZE_ML) : '';
+      const dup = linesOf(menuId).find(l => l.LINE_ID !== lineId && String(l.ING_ID) === String(wineId)
+        && serveOf(l) === kind && Number(l.SIZE_ML || 0) === Number(size || 0));
+      if (dup) throw new Error(`${name} is already on this menu ${SERVES[kind].toLowerCase()}${kind === 'glass' ? ` at ${size} ml` : ''}.`);
+      if (line) await store.update('WINE_MENU_LINES', lineId, { SIZE_ML: size, SELL_PRICE: d.SELL_PRICE });
+      else await store.create('WINE_MENU_LINES', { MENU_ID: menuId, ING_ID: wineId, SERVE: kind, SIZE_ML: size, SELL_PRICE: d.SELL_PRICE });
+      toast(line ? `Saved ${name}` : `Added ${name} ${SERVES[kind].toLowerCase()}`);
       refresh();
     },
   });
@@ -422,34 +468,29 @@ function openLineForm(lineId) {
 /** The menu as plain text, grouped by style, with a wine's glass and bottle prices on one line. */
 function menuText(menu, b) {
   const out = [menu.NAME, ''];
-  const wines = new Map();
-  for (const l of b.lines.filter(x => x.wine).sort(COMPARE.style)) {
-    const id = String(l.wine.ING_ID);
-    if (!wines.has(id)) wines.set(id, { wine: l.wine, serves: [] });
-    const price = l.sell == null ? 'price tbc' : money(l.sell);
-    wines.get(id).serves.push(l.serve === 'glass' ? `${Number(l.line.SIZE_ML) || ''}ml ${price}` : `bottle ${price}`);
-  }
+  const price = l => (l.sell == null ? 'price tbc' : money(l.sell));
   let style = null;
-  for (const { wine, serves } of wines.values()) {
-    const s = String(wine.STYLE).trim() || 'Other';
+  for (const r of b.rows.filter(x => x.wine).sort(COMPARE.style)) {
+    const s = String(r.wine.STYLE).trim() || 'Other';
     if (s !== style) { if (style !== null) out.push(''); out.push(s.toUpperCase()); style = s; }
-    out.push(`${[wine.PRODUCER, displayName(wine)].filter(Boolean).join(', ')}  ${serves.join(' / ')}`);
+    const serves = [...r.glass.map(l => `${Number(l.line.SIZE_ML) || ''}ml ${price(l)}`), ...r.bottle.map(l => `bottle ${price(l)}`)];
+    out.push(`${[r.wine.PRODUCER, displayName(r.wine)].filter(Boolean).join(', ')}  ${serves.join(' / ')}`);
   }
   return out.join('\n');
 }
 
 function onClick(e) {
-  const lineBtn = e.target.closest('[data-line]');
-  if (lineBtn) { openLineForm(lineBtn.dataset.line); return; }
-  const serve = e.target.closest('[data-add-serve]');
-  if (serve) { ds.serve = serve.dataset.addServe; renderDetail(); return; }
+  const cell = e.target.closest('[data-line]');
+  if (cell) { openLineForm({ lineId: cell.dataset.line }); return; }
+  const quick = e.target.closest('[data-quick]');
+  if (quick) { openLineForm({ ingId: quick.dataset.wine, serve: quick.dataset.quick }); return; }
   const show = e.target.closest('[data-show]');
   if (show) { ds.show = show.dataset.show; renderDetail(); return; }
 
   const act = e.target.closest('[data-act]')?.dataset.act;
   const menu = store.byId('WINE_MENUS', ds.id);
   if (act === 'close') dlg.close();
-  else if (act === 'add') addLine();
+  else if (act === 'add') addWine();
   else if (act === 'edit') openMenuForm(menu);
   else if (act === 'copy') {
     navigator.clipboard.writeText(menuText(menu, build(ds.id)))
