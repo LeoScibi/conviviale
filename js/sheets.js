@@ -190,7 +190,8 @@ export async function appendRows(tab, headers, records, idField) {
   if (!records.length) return null;
   const { sheetId, table } = await infoOf(tab);
   const rows = records.map(r => ({ values: headers.map(h => (h && h in r ? cellOf(r[h]) : {})) }));
-  const where = table ? { tableId: table.tableId } : { sheetId };
+  // A table's rows need its tab's sheetId too, or the API looks for sheet 0.
+  const where = table ? { sheetId, tableId: table.tableId } : { sheetId };
   const res = await request(':batchUpdate', {
     method: 'POST',
     body: { requests: [{ appendCells: { ...where, rows, fields: 'userEnteredValue' } }] },
