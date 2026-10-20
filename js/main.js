@@ -74,6 +74,7 @@ async function start() {
 
     show('#loading', 'Loading data…');
     await store.loadAll();
+    const ided = await store.fillMissingIds();
     const moved = await moveWinesToTab();
     const migrated = await migrateToPriceLists();
 
@@ -81,6 +82,7 @@ async function start() {
     $('#banner').hidden = true;
     route();
     if (createdTabs.length) toast(`Set up spreadsheet tabs: ${createdTabs.join(', ')}`);
+    toastIds(ided);
     if (moved.wines) toast(`Moved ${moved.wines} wine${moved.wines === 1 ? '' : 's'} to the WINES tab`);
     if (migrated.prices) toast(`Moved ${migrated.prices} ingredient price${migrated.prices === 1 ? '' : 's'} into supplier price lists`);
     const added = Object.entries(addedColumns);
@@ -90,6 +92,12 @@ async function start() {
     if (err instanceof auth.AuthError) showSignin(err.message);
     else showFatal(err.message || String(err));
   }
+}
+
+/** Say which rows typed into the sheet were given IDs. */
+function toastIds(filled) {
+  const parts = Object.entries(filled).map(([tab, n]) => `${n} in ${tab}`);
+  if (parts.length) toast(`Gave new rows added in the sheet their IDs: ${parts.join(', ')}`);
 }
 
 async function handleSignIn() {
@@ -124,8 +132,10 @@ async function handleRefresh() {
   btn.classList.add('spinning');
   try {
     await store.loadAll();
+    const ided = await store.fillMissingIds();
     route();
     toast('Data refreshed from the spreadsheet');
+    toastIds(ided);
   } catch (err) {
     toast(err.message, 'error');
   } finally {

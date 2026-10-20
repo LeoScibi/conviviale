@@ -82,7 +82,13 @@ full-screen forms. It can be added to the home screen and opens like an app.
   SUPPLIER_ID) is copied down from the first data row (row 2) into each row the app adds, except in
   PRICE_HISTORY. Keep date columns (UPDATED, DATE) as plain text: the app writes them as
   `YYYY-MM-DD` text.
-- Records link by ID, never by name.
+- Records link by ID, never by name. IDs are permanent values, never formulas: a formula would be
+  worked out from the row's position and change when the sheet is sorted, breaking every link.
+- Rows can be added straight into the sheet. Leave the ID column (ING_ID, SUPPLIER_ID, LINE_ID…)
+  blank: the app gives each such row the next ID when it loads or when Refresh is pressed.
+  INGREDIENTS and WINES share one numbering. Blank rows are skipped, and an unticked box counts
+  as blank, so a table's spare rows aren't mistaken for records. Number columns accept text like
+  `£12.50`, `1,250` or `70%`.
 - Only raw inputs are stored. Costs are computed in the app.
 - Ingredients are generic: name, category, how they're measured (`UNIT`: g / ml / each), yield,
   allergens. Prices live in **SUPPLIER_PRICES**, one row per supplier + ingredient + pack, so an
@@ -122,8 +128,7 @@ full-screen forms. It can be added to the home screen and opens like an app.
   takes many pictures at once and matches each to a wine by file name (`Producer - Wine Vintage.jpg`).
 - Ingredients are retired by unticking ACTIVE rather than deleted, so recipes keep working.
 - RECIPE_LINES has two extra columns, `LINE_ID` and `SORT`, so a single line can be edited,
-  reordered or removed in place. Lines added straight into the sheet without a LINE_ID still
-  cost correctly but can only be edited in the sheet.
+  reordered or removed in place. Lines added straight into the sheet get a LINE_ID on the next load.
 - Recipe costs are never stored. Cost per portion, GP and allergens are recalculated from the
   current ingredient prices every time, through any depth of sub-recipes.
 - A recipe line's ITEM_TYPE is `ING` or `SUB`. Sub-recipes can be used by weight/volume (needs a

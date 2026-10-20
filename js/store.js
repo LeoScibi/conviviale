@@ -22,9 +22,10 @@ export const dataVersion = () => version;
 
 function coerceIn(tab, rec) {
   const s = SCHEMA[tab];
+  // Numbers typed into the sheet as text, e.g. "£12.50", "1,250" or "70%", still count.
   for (const f of s.numbers || []) {
-    const v = rec[f];
-    if (typeof v === 'string' && v.trim() !== '' && !isNaN(v)) rec[f] = Number(v);
+    const v = typeof rec[f] === 'string' ? rec[f].replace(/[£,%\s]/g, '') : rec[f];
+    if (typeof v === 'string' && v !== '' && !isNaN(v)) rec[f] = Number(v);
   }
   // Blank ACTIVE (e.g. a row typed straight into the sheet) counts as active.
   for (const f of s.booleans || []) {
@@ -76,7 +77,7 @@ export function rows(tab) {
   if (!merged) {
     // A wine left in both tabs by an interrupted move counts once, as the WINES copy.
     const wines = tables[WINE_TAB]?.rows ?? [];
-    const ids = new Set(wines.map(r => String(r.ING_ID)));
+    const ids = new Set(wines.map(r => String(r.ING_ID)).filter(Boolean));
     merged = [...(tables.INGREDIENTS?.rows ?? []).filter(r => !ids.has(String(r.ING_ID))), ...wines];
   }
   return merged;
@@ -100,6 +101,29 @@ function nextId(tab) {
     return match ? Math.max(m, Number(match[1])) : m;
   }, 0);
   return `${idPrefix}-${String(max + 1).padStart(4, '0')}`;
+}
+
+/**
+ * Stamp an ID into every row typed into the sheet without one, numbered after the highest
+ * existing ID (across INGREDIENTS and WINES for those two). Returns { TAB: count } for tabs
+ * that got any.
+ */
+export async function fillMissingIds() {
+  // Works from the loaded data (call after loadAll); each tab is re-read just before writing.
+  const tabs = Object.keys(SCHEMA).filter(t => SCHEMA[t].idPrefix && t !== WINE_TAB);
+  const filled = {};
+  for (const tab of tabs) {
+    const { idField, idPrefix } = SCHEMA[tab];
+    let n = Number(nextId(tab).slice(idPrefix.length + 1));
+    const next = () => `${idPrefix}-${String(n++).padStart(4, '0')}`;
+    for (const part of partsOf(tab)) {
+      if (!tabRows(part).some(r => String(r[idField] ?? '').trim() === '')) continue;
+      const ids = await sheets.fillBlankIds(part, idField, next);
+      if (ids.length) filled[part] = ids.length;
+    }
+  }
+  if (Object.keys(filled).length) await refresh(...Object.keys(filled));
+  return filled;
 }
 
 /** Append new records; returns their generated IDs in order. */

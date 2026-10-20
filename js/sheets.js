@@ -143,7 +143,9 @@ function parseTable(values = []) {
   const rows = [];
   for (let i = 1; i < values.length; i++) {
     const raw = values[i] || [];
-    if (!raw.some(v => v !== '' && v != null)) continue;
+    // Blank rows are skipped. An unticked box counts as blank: a table's spare rows hold FALSE
+    // in its checkbox columns.
+    if (!raw.some(v => v !== '' && v != null && v !== false)) continue;
     const obj = { _row: i + 1 };
     headers.forEach((h, j) => { if (h) obj[h] = raw[j] ?? ''; });
     rows.push(obj);
@@ -243,6 +245,28 @@ export async function updateRowsById(tab, idField, patches) {
   });
   if (!data.length) return null;
   return request('/values:batchUpdate', { method: 'POST', body: { valueInputOption: 'RAW', data } });
+}
+
+/**
+ * Give every row with a blank ID one, from `nextId()`. Rows typed into the sheet by hand are
+ * left without an ID; this stamps a permanent one in. Reads the tab immediately before writing,
+ * so the IDs land on the rows that are blank now. Returns the IDs written.
+ */
+export async function fillBlankIds(tab, idField, nextId) {
+  const { headers, rows } = await readTable(tab);
+  const col = headers.indexOf(idField);
+  if (col < 0) return [];
+  const blank = rows.filter(r => String(r[idField] ?? '').trim() === '');
+  if (!blank.length) return [];
+  const ids = blank.map(() => nextId());
+  await request('/values:batchUpdate', {
+    method: 'POST',
+    body: {
+      valueInputOption: 'RAW',
+      data: blank.map((r, i) => ({ range: `${q(tab)}!${colLetter(col + 1)}${r._row}`, values: [[ids[i]]] })),
+    },
+  });
+  return ids;
 }
 
 export async function updateRowById(tab, idField, id, patch) {

@@ -41,7 +41,7 @@ export async function migrateToPriceLists() {
  * typed into INGREDIENTS by hand) into the WINES tab, keeping their IDs.
  */
 export async function moveWinesToTab() {
-  const left = store.tabRows('INGREDIENTS').filter(isWine);
+  const left = store.tabRows('INGREDIENTS').filter(i => isWine(i) && String(i.ING_ID ?? '').trim());
   if (left.length) await store.moveToWines(left.map(i => ({ id: i.ING_ID, record: {} })));
   return { wines: left.length };
 }
