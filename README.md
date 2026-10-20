@@ -48,6 +48,7 @@ in `index.html` (one search-and-replace), and add any new `js/` module to the im
 | `js/store.js` | In-memory cache, type coercion, ID generation (`SUP-0001`, `ING-0001`, `REC-0001`); reads INGREDIENTS and WINES as one list |
 | `js/costing.js` | Derived costs: price-list unit costs, preferred-else-cheapest price, yield |
 | `js/starter-ingredients.js` | Starter list of common wine-bar ingredients for the "Add many" screen |
+| `js/link-names.js` | Swaps names typed into the sheet's link columns (SUPPLIER_ID, ING_ID, RECIPE_ID…) for IDs on load |
 | `js/migrate.js` | One-off data migrations run on load (single-supplier prices → price lists, wines → WINES tab) |
 | `js/pricelist-paste.js` | Price-list parser (case vs per-kg price, pack sizes, sections) and product matching |
 | `js/pdf-text.js` | Reads a PDF into text rows (pdf.js) |
@@ -89,6 +90,14 @@ full-screen forms. It can be added to the home screen and opens like an app.
   INGREDIENTS and WINES share one numbering. Blank rows are skipped, and an unticked box counts
   as blank, so a table's spare rows aren't mistaken for records. Number columns accept text like
   `£12.50`, `1,250` or `70%`.
+- In a link column you can type the name instead of the ID: a supplier in SUPPLIER_ID, an
+  ingredient or wine in ING_ID, a recipe in RECIPE_ID, a menu in MENU_ID, an ingredient or
+  sub-recipe in a recipe line's ITEM_ID (ITEM_TYPE is filled in if blank). On load the app swaps
+  it for that record's ID. Case, accents and punctuation don't matter. A wine can be typed as its
+  name, name and vintage, or producer, name and vintage; give the vintage when there are several.
+  When several records share a name, the only active one is used. A name that matches nothing,
+  or several records, is left as typed and reported when the app loads. PRICE_HISTORY and PHOTOS
+  are written by the app and aren't matched.
 - Only raw inputs are stored. Costs are computed in the app.
 - Ingredients are generic: name, category, how they're measured (`UNIT`: g / ml / each), yield,
   allergens. Prices live in **SUPPLIER_PRICES**, one row per supplier + ingredient + pack, so an

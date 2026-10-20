@@ -5,6 +5,7 @@ import * as store from './store.js';
 import { toast, setReconnectHandler } from './ui.js';
 import './item-search.js';
 import { migrateToPriceLists, moveWinesToTab } from './migrate.js';
+import { linkNames } from './link-names.js';
 import * as ingredients from './views/ingredients.js';
 import * as wines from './views/wines.js';
 import * as suppliers from './views/suppliers.js';
@@ -75,6 +76,7 @@ async function start() {
     show('#loading', 'Loading data…');
     await store.loadAll();
     const ided = await store.fillMissingIds();
+    const linked = await linkNames();
     const moved = await moveWinesToTab();
     const migrated = await migrateToPriceLists();
 
@@ -83,6 +85,7 @@ async function start() {
     route();
     if (createdTabs.length) toast(`Set up spreadsheet tabs: ${createdTabs.join(', ')}`);
     toastIds(ided);
+    toastLinks(linked);
     if (moved.wines) toast(`Moved ${moved.wines} wine${moved.wines === 1 ? '' : 's'} to the WINES tab`);
     if (migrated.prices) toast(`Moved ${migrated.prices} ingredient price${migrated.prices === 1 ? '' : 's'} into supplier price lists`);
     const added = Object.entries(addedColumns);
@@ -98,6 +101,15 @@ async function start() {
 function toastIds(filled) {
   const parts = Object.entries(filled).map(([tab, n]) => `${n} in ${tab}`);
   if (parts.length) toast(`Gave new rows added in the sheet their IDs: ${parts.join(', ')}`);
+}
+
+/** Say how many names typed into link columns were matched, and which weren't. */
+function toastLinks({ fixed, unmatched }) {
+  if (fixed) toast(`Matched ${fixed} name${fixed === 1 ? '' : 's'} typed into the sheet`);
+  if (!unmatched.length) return;
+  const list = unmatched.slice(0, 3).map(u => `“${u.value}” in ${u.tab} ${u.column} (${u.why})`).join('; ');
+  const more = unmatched.length > 3 ? ` and ${unmatched.length - 3} more` : '';
+  toast(`Couldn't match ${list}${more}. Fix the name in the sheet, or use the ID.`, 'error');
 }
 
 async function handleSignIn() {
@@ -133,9 +145,11 @@ async function handleRefresh() {
   try {
     await store.loadAll();
     const ided = await store.fillMissingIds();
+    const linked = await linkNames();
     route();
     toast('Data refreshed from the spreadsheet');
     toastIds(ided);
+    toastLinks(linked);
   } catch (err) {
     toast(err.message, 'error');
   } finally {
