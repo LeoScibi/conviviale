@@ -17,9 +17,10 @@ Data lives in a Google Sheet, read and written directly from the browser with th
    Real access control is who the spreadsheet is shared with.
 4. **Share the spreadsheet** (edit access) with staff who should use the app.
 
-On first sign-in the app creates any missing tabs (SUPPLIERS, INGREDIENTS, PRICE_HISTORY,
-RECIPES, RECIPE_LINES, PHOTOS…) with headers. If a tab exists but is missing a column, the column is
-appended at the end. Nothing is ever removed or reordered.
+On first sign-in the app creates any missing tabs (SUPPLIERS, INGREDIENTS, WINES, PRICE_HISTORY,
+RECIPES, RECIPE_LINES, PHOTOS…) with headers, each formatted as a Google Sheets table. If a tab exists
+but is missing a column, the column is appended at the end (and the tab's table widened to take it).
+Nothing is ever removed or reordered.
 
 ## Local development
 
@@ -44,10 +45,10 @@ in `index.html` (one search-and-replace), and add any new `js/` module to the im
 | `js/config.js` | Client ID, spreadsheet ID, data model (tabs, headers, column types), allergen list |
 | `js/auth.js` | Google Identity Services token client, domain check, session expiry |
 | `js/sheets.js` | Sheets API wrapper: schema setup, read tables by header, append, update row by ID |
-| `js/store.js` | In-memory cache, type coercion, ID generation (`SUP-0001`, `ING-0001`, `REC-0001`) |
+| `js/store.js` | In-memory cache, type coercion, ID generation (`SUP-0001`, `ING-0001`, `REC-0001`); reads INGREDIENTS and WINES as one list |
 | `js/costing.js` | Derived costs: price-list unit costs, preferred-else-cheapest price, yield |
 | `js/starter-ingredients.js` | Starter list of common wine-bar ingredients for the "Add many" screen |
-| `js/migrate.js` | One-off data migrations run on load (single-supplier prices → price lists) |
+| `js/migrate.js` | One-off data migrations run on load (single-supplier prices → price lists, wines → WINES tab) |
 | `js/pricelist-paste.js` | Price-list parser (case vs per-kg price, pack sizes, sections) and product matching |
 | `js/pdf-text.js` | Reads a PDF into text rows (pdf.js) |
 | `js/units.js` | Recipe measurement families (weight / volume / each) and conversions |
@@ -74,7 +75,13 @@ full-screen forms. It can be added to the home screen and opens like an app.
 ## Data rules
 
 - Row 1 is headers. Columns are matched by header name, so you can reorder columns or add your
-  own (e.g. NOTES) in the sheet. The app preserves them.
+  own (e.g. NOTES) in the sheet. The app only writes the cells of its own columns, so yours are
+  left alone, formulas included.
+- Any tab can be formatted as a table (Format > Convert to table), with column types and dropdowns.
+  New rows go into the table. A formula column you add (e.g. a supplier's name looked up from
+  SUPPLIER_ID) is copied down from the first data row (row 2) into each row the app adds, except in
+  PRICE_HISTORY. Keep date columns (UPDATED, DATE) as plain text: the app writes them as
+  `YYYY-MM-DD` text.
 - Records link by ID, never by name.
 - Only raw inputs are stored. Costs are computed in the app.
 - Ingredients are generic: name, category, how they're measured (`UNIT`: g / ml / each), yield,
@@ -96,12 +103,19 @@ full-screen forms. It can be added to the home screen and opens like an app.
 - Sheets created before price lists keep their old SUPPLIER_CODE / PACK_SIZE / PACK_UNIT /
   PACK_PRICE columns on INGREDIENTS. On first load those prices are copied into SUPPLIER_PRICES;
   after that the app ignores the old columns, and they can be deleted from the sheet.
-- Wines are rows in INGREDIENTS with `KIND` = `wine`, shown on their own Wines page instead of
-  Ingredients. They add PRODUCER, VINTAGE, REGION, GRAPE and STYLE, are measured in ml and priced
-  by the bottle, and use the same suppliers and SUPPLIER_PRICES as everything else, so a bottle
-  can go straight into a by-the-glass recipe. The same wine can be listed in several vintages.
+- Wines live in their own **WINES** tab and are shown on their own Wines page. They are still
+  ingredients to the rest of the app: they share the `ING-0001` numbering, so SUPPLIER_PRICES,
+  recipes (a bottle can go straight into a by-the-glass recipe), wine menus and photos link to
+  them the same way. The app reads INGREDIENTS and WINES as one list, and a change is written to
+  whichever tab holds the record. WINES adds PRODUCER, VINTAGE, REGION, GRAPE and STYLE and leaves
+  out CATEGORY, KIND and YIELD_% (always Wine, wine and 100). UNIT is `ml` when left blank. Wines
+  are priced by the bottle. The same wine can be listed in several vintages.
   "Add many" reads a pasted list (`Producer - Wine Vintage`, style, bottle price ex VAT) and saves
   the prices on one chosen supplier's list.
+- Wines used to be INGREDIENTS rows with `KIND` = `wine`. On load, any such row (including one
+  typed into INGREDIENTS by hand) is moved to WINES with its ID. "Move them here" on the Wines
+  page does the same for ingredients in the Wine category. After the move, the wine-only columns
+  and KIND on INGREDIENTS are unused and can be deleted from the sheet.
 - A wine's photo is shrunk in the browser (longest side 420 px or less) and stored as a JPEG data URL
   in the PHOTOS tab, because a sheet cell holds at most 50,000 characters. It is a thumbnail, not
   the original picture. Deleting a row in PHOTOS removes the photo. "Add photos" on the Wines page

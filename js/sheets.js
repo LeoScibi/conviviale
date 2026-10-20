@@ -1,6 +1,9 @@
 // Thin wrapper over the Google Sheets API v4, called directly from the browser.
 // Tables are read by header name, so column order in the sheet doesn't matter
 // and extra columns added by hand are preserved on update.
+// A tab can also be formatted as a Google Sheets table (Format > Convert to table): new rows go
+// into the table, and the app only ever writes the cells of its own columns, so columns added by
+// hand (including formulas) are left alone. Formula columns are copied down into new rows.
 
 import { CONFIG } from './config.js';
 import { getToken, markExpired, AuthError } from './auth.js';
@@ -57,17 +60,31 @@ export function colLetter(n) {
 }
 
 /**
- * Create any missing tabs, and append any missing header columns to existing tabs.
- * Never removes or reorders anything already in the sheet.
+ * { TAB: { sheetId, table } } where `table` is the tab's first Google Sheets table, if any.
+ * Read fresh each time: tables can be added or resized in the sheet while the app is open.
+ */
+async function tabsInfo() {
+  const meta = await request('', { query: { fields: 'sheets(properties(sheetId,title),tables(tableId,range))' } });
+  return Object.fromEntries(meta.sheets.map(s => [s.properties.title, { sheetId: s.properties.sheetId, table: s.tables?.[0] ?? null }]));
+}
+
+async function infoOf(tab) {
+  const info = (await tabsInfo())[tab];
+  if (!info) throw new SheetsError(404, `The ${tab} tab is missing from the spreadsheet.`);
+  return info;
+}
+
+/**
+ * Create any missing tabs (as tables), and append any missing header columns to existing tabs,
+ * widening a tab's table to take them. Never removes or reorders anything already in the sheet.
  */
 export async function ensureSchema(schema) {
   const tabs = Object.keys(schema);
-  const meta = await request('', { query: { fields: 'sheets.properties(sheetId,title)' } });
-  const existing = new Set(meta.sheets.map(s => s.properties.title));
+  const existing = new Set(Object.keys(await tabsInfo()));
   const missing = tabs.filter(t => !existing.has(t));
 
   if (missing.length) {
-    const res = await request(':batchUpdate', {
+    await request(':batchUpdate', {
       method: 'POST',
       body: {
         requests: missing.map(title => ({
@@ -75,34 +92,48 @@ export async function ensureSchema(schema) {
         })),
       },
     });
-    // Bold the header row of new tabs.
-    await request(':batchUpdate', {
-      method: 'POST',
-      body: {
-        requests: res.replies.map(r => ({
-          repeatCell: {
-            range: { sheetId: r.addSheet.properties.sheetId, startRowIndex: 0, endRowIndex: 1 },
-            cell: { userEnteredFormat: { textFormat: { bold: true } } },
-            fields: 'userEnteredFormat.textFormat.bold',
-          },
-        })),
-      },
-    });
   }
 
   const got = await request('/values:batchGet', { query: { ranges: tabs.map(t => `${q(t)}!1:1`) } });
   const data = [];
+  const widths = {};
   const addedColumns = {};
   got.valueRanges.forEach((vr, i) => {
     const tab = tabs[i];
     const current = (vr.values?.[0] || []).map(h => String(h).trim());
     const add = schema[tab].headers.filter(h => !current.includes(h));
+    widths[tab] = current.length + add.length;
     if (!add.length) return;
     data.push({ range: `${q(tab)}!${colLetter(current.length + 1)}1`, values: [add] });
     if (existing.has(tab)) addedColumns[tab] = add;
   });
   if (data.length) {
     await request('/values:batchUpdate', { method: 'POST', body: { valueInputOption: 'RAW', data } });
+  }
+
+  // New tabs become tables (header plus one empty row); tables on existing tabs widen to cover
+  // any header columns just added after them.
+  const info = await tabsInfo();
+  const requests = [];
+  for (const tab of missing) {
+    requests.push({
+      addTable: {
+        table: {
+          name: tab,
+          range: { sheetId: info[tab].sheetId, startRowIndex: 0, endRowIndex: 2, startColumnIndex: 0, endColumnIndex: widths[tab] },
+        },
+      },
+    });
+  }
+  for (const tab of Object.keys(addedColumns)) {
+    const t = info[tab].table;
+    if (!t || t.range.startRowIndex !== 0 || (t.range.startColumnIndex ?? 0) !== 0 || t.range.endColumnIndex >= widths[tab]) continue;
+    requests.push({
+      updateTable: { table: { tableId: t.tableId, range: { ...t.range, endColumnIndex: widths[tab] } }, fields: 'range' },
+    });
+  }
+  if (requests.length) {
+    await request(':batchUpdate', { method: 'POST', body: { requests } });
   }
   return { createdTabs: missing, addedColumns };
 }
@@ -113,7 +144,7 @@ function parseTable(values = []) {
   for (let i = 1; i < values.length; i++) {
     const raw = values[i] || [];
     if (!raw.some(v => v !== '' && v != null)) continue;
-    const obj = { _row: i + 1, _raw: raw };
+    const obj = { _row: i + 1 };
     headers.forEach((h, j) => { if (h) obj[h] = raw[j] ?? ''; });
     rows.push(obj);
   }
@@ -138,32 +169,76 @@ export async function readTable(tab) {
   return (await readTables([tab]))[tab];
 }
 
-/** Lay out a record as a row in the sheet's actual header order, keeping unknown columns from `base`. */
-function toRow(headers, record, base = []) {
-  return headers.map((h, i) => (h && h in record ? record[h] : base[i] ?? ''));
+/** A value as a cell, stored as typed (like RAW: text starting with = stays text). */
+function cellOf(v) {
+  if (v === '' || v == null) return {};
+  if (typeof v === 'boolean') return { userEnteredValue: { boolValue: v } };
+  if (typeof v === 'number') return { userEnteredValue: { numberValue: v } };
+  return { userEnteredValue: { stringValue: String(v) } };
 }
 
-export async function appendRows(tab, headers, records) {
-  return request(`/values/${encodeURIComponent(`${q(tab)}!A1`)}:append`, {
+/** 0-based indexes of the columns in `headers` that some record has a value for. */
+const ownedColumns = (headers, records) =>
+  headers.map((h, i) => (h && records.some(r => h in r) ? i : -1)).filter(i => i >= 0);
+
+/**
+ * Append records as new rows, inside the tab's table if it has one. Columns the records don't
+ * have are left blank, except formula columns, which are copied down from the first data row.
+ * With `idField`, the new rows are found again by ID to receive those formulas.
+ */
+export async function appendRows(tab, headers, records, idField) {
+  if (!records.length) return null;
+  const { sheetId, table } = await infoOf(tab);
+  const rows = records.map(r => ({ values: headers.map(h => (h && h in r ? cellOf(r[h]) : {})) }));
+  const where = table ? { tableId: table.tableId } : { sheetId };
+  const res = await request(':batchUpdate', {
     method: 'POST',
-    query: { valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS' },
-    body: { values: records.map(r => toRow(headers, r)) },
+    body: { requests: [{ appendCells: { ...where, rows, fields: 'userEnteredValue' } }] },
   });
+  if (idField) await copyFormulasDown(tab, sheetId, headers, records, idField);
+  return res;
+}
+
+async function copyFormulasDown(tab, sheetId, headers, records, idField) {
+  const owned = new Set(ownedColumns(headers, records));
+  if (owned.size === headers.length) return;
+  const got = await request(`/values/${encodeURIComponent(`${q(tab)}!2:2`)}`, { query: { valueRenderOption: 'FORMULA' } });
+  const first = got.values?.[0] || [];
+  const cols = headers.map((_, i) => i).filter(i => !owned.has(i) && String(first[i] ?? '').startsWith('='));
+  if (!cols.length) return;
+  const ids = new Set(records.map(r => String(r[idField])));
+  const targets = (await readTable(tab)).rows.filter(r => ids.has(String(r[idField])) && r._row !== 2);
+  const requests = targets.flatMap(r => cols.map(c => ({
+    copyPaste: {
+      source: { sheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: c, endColumnIndex: c + 1 },
+      destination: { sheetId, startRowIndex: r._row - 1, endRowIndex: r._row, startColumnIndex: c, endColumnIndex: c + 1 },
+      pasteType: 'PASTE_FORMULA',
+    },
+  })));
+  if (requests.length) await request(':batchUpdate', { method: 'POST', body: { requests } });
 }
 
 /**
  * Update rows by ID: `patches` is [{ id, patch }]. Re-reads the tab first so rows are located
- * by ID even if they were inserted or sorted in the sheet since we loaded it. One write request.
+ * by ID even if they were inserted or sorted in the sheet since we loaded it. Only the cells of
+ * the patched columns are written, so other columns (and their formulas) are untouched.
+ * One write request.
  */
 export async function updateRowsById(tab, idField, patches) {
   const { headers, rows } = await readTable(tab);
-  const data = patches.map(({ id, patch }) => {
+  const data = patches.flatMap(({ id, patch }) => {
     const row = rows.find(r => String(r[idField]) === String(id));
     if (!row) throw new SheetsError(404, `${id} was not found in ${tab}. It may have been deleted in the sheet.`);
-    return {
-      range: `${q(tab)}!A${row._row}:${colLetter(headers.length)}${row._row}`,
-      values: [toRow(headers, patch, row._raw)],
-    };
+    // Runs of adjacent columns go in one range.
+    const runs = [];
+    for (const i of ownedColumns(headers, [patch])) {
+      const last = runs[runs.length - 1];
+      if (last && last.end === i) { last.end = i + 1; last.values.push(patch[headers[i]]); } else runs.push({ start: i, end: i + 1, values: [patch[headers[i]]] });
+    }
+    return runs.map(({ start, end, values }) => ({
+      range: `${q(tab)}!${colLetter(start + 1)}${row._row}:${colLetter(end)}${row._row}`,
+      values: [values.map(v => v ?? '')],
+    }));
   });
   if (!data.length) return null;
   return request('/values:batchUpdate', { method: 'POST', body: { valueInputOption: 'RAW', data } });
@@ -171,17 +246,6 @@ export async function updateRowsById(tab, idField, patches) {
 
 export async function updateRowById(tab, idField, id, patch) {
   return updateRowsById(tab, idField, [{ id, patch }]);
-}
-
-let sheetIds = null;
-
-async function sheetIdOf(tab) {
-  if (!sheetIds || !(tab in sheetIds)) {
-    const meta = await request('', { query: { fields: 'sheets.properties(sheetId,title)' } });
-    sheetIds = Object.fromEntries(meta.sheets.map(s => [s.properties.title, s.properties.sheetId]));
-  }
-  if (!(tab in sheetIds)) throw new SheetsError(404, `The ${tab} tab is missing from the spreadsheet.`);
-  return sheetIds[tab];
 }
 
 /**
@@ -193,7 +257,7 @@ export async function deleteRowsById(specs) {
   const requests = [];
   for (const { tab, idField, ids } of specs) {
     const want = new Set(ids.map(String));
-    const sheetId = await sheetIdOf(tab);
+    const { sheetId } = await infoOf(tab);
     // Bottom-up, so earlier deletions don't shift the rows still to delete.
     tables[tab].rows
       .filter(r => want.has(String(r[idField])))

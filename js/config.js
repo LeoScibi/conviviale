@@ -28,15 +28,23 @@ export const SCHEMA = {
   // Prices live in SUPPLIER_PRICES. SUPPLIER_ID here is the *preferred* supplier; blank means
   // recipes use the cheapest price. Sheets created before price lists still carry old
   // SUPPLIER_CODE / PACK_* columns on this tab; the app no longer reads them after migrating.
-  // Wines live here too, marked KIND = wine, so price lists, recipes (wine by the glass) and menus
-  // treat them like any other ingredient. They get their own page and the wine-only columns
-  // PRODUCER / VINTAGE / REGION / GRAPE / STYLE; they're measured in ml and priced by the bottle.
   INGREDIENTS: {
     idField: 'ING_ID',
     idPrefix: 'ING',
     headers: ['ING_ID', 'NAME', 'CATEGORY', 'UNIT', 'SUPPLIER_ID', 'YIELD_%', 'ALLERGENS', 'STORAGE',
-      'SHELF_LIFE', 'ACTIVE', 'KIND', 'PRODUCER', 'VINTAGE', 'REGION', 'GRAPE', 'STYLE'],
+      'SHELF_LIFE', 'ACTIVE'],
     numbers: ['YIELD_%'],
+    booleans: ['ACTIVE'],
+  },
+  // Wines are ingredients kept in a tab of their own. They share the ING_ID numbering, so price
+  // lists, recipes (wine by the glass), wine menus and photos link to them like any ingredient,
+  // and the app reads both tabs as one list (see js/store.js). A wine's KIND, CATEGORY and
+  // YIELD_% are implied by the tab; UNIT is ml unless filled in.
+  WINES: {
+    idField: 'ING_ID',
+    idPrefix: 'ING',
+    headers: ['ING_ID', 'PRODUCER', 'NAME', 'VINTAGE', 'STYLE', 'REGION', 'GRAPE', 'SUPPLIER_ID', 'UNIT',
+      'ALLERGENS', 'STORAGE', 'ACTIVE'],
     booleans: ['ACTIVE'],
   },
   // A supplier's price list: one row per supplier + ingredient + pack. PACK_UNIT is stored as

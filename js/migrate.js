@@ -3,6 +3,7 @@
 
 import * as store from './store.js';
 import { normUnit } from './units.js';
+import { isWine } from './costing.js';
 
 const BASE_UNITS = ['g', 'ml', 'each'];
 
@@ -33,4 +34,14 @@ export async function migrateToPriceLists() {
   if (prices.length) await store.createMany('SUPPLIER_PRICES', prices);
   if (units.length) await store.updateMany('INGREDIENTS', units);
   return { prices: prices.length };
+}
+
+/**
+ * Wines used to be INGREDIENTS rows marked KIND = wine. Move any still there (including ones
+ * typed into INGREDIENTS by hand) into the WINES tab, keeping their IDs.
+ */
+export async function moveWinesToTab() {
+  const left = store.tabRows('INGREDIENTS').filter(isWine);
+  if (left.length) await store.moveToWines(left.map(i => ({ id: i.ING_ID, record: {} })));
+  return { wines: left.length };
 }

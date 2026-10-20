@@ -4,7 +4,7 @@ import * as sheets from './sheets.js';
 import * as store from './store.js';
 import { toast, setReconnectHandler } from './ui.js';
 import './item-search.js';
-import { migrateToPriceLists } from './migrate.js';
+import { migrateToPriceLists, moveWinesToTab } from './migrate.js';
 import * as ingredients from './views/ingredients.js';
 import * as wines from './views/wines.js';
 import * as suppliers from './views/suppliers.js';
@@ -74,12 +74,14 @@ async function start() {
 
     show('#loading', 'Loading data…');
     await store.loadAll();
+    const moved = await moveWinesToTab();
     const migrated = await migrateToPriceLists();
 
     show('#app');
     $('#banner').hidden = true;
     route();
     if (createdTabs.length) toast(`Set up spreadsheet tabs: ${createdTabs.join(', ')}`);
+    if (moved.wines) toast(`Moved ${moved.wines} wine${moved.wines === 1 ? '' : 's'} to the WINES tab`);
     if (migrated.prices) toast(`Moved ${migrated.prices} ingredient price${migrated.prices === 1 ? '' : 's'} into supplier price lists`);
     const added = Object.entries(addedColumns);
     if (added.length) toast(`Added missing columns: ${added.map(([t, cols]) => `${t} (${cols.join(', ')})`).join('; ')}`);

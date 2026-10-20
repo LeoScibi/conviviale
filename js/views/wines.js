@@ -1,5 +1,6 @@
-// Wines: ingredients marked KIND = wine, shown on their own page with wine details. They share
-// suppliers and price lists with ingredients, so a bottle can go straight into a by-the-glass recipe.
+// Wines: ingredients marked KIND = wine, kept in the WINES tab and shown on their own page with wine
+// details. They share IDs, suppliers and price lists with ingredients, so a bottle can go straight
+// into a by-the-glass recipe. Marking an ingredient as a wine moves it to the WINES tab.
 
 import * as store from '../store.js';
 import { ALLERGENS, WINE_KIND, WINE_CATEGORY, WINE_STYLES } from '../config.js';
