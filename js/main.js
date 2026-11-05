@@ -202,7 +202,7 @@ async function boot() {
 // version. If there's a new one it reloads straight away, unless a form or the scanner is open;
 // then it offers an Update button instead. The sign-in and unsent stock counts survive a reload.
 
-const RUNNING_VERSION = new URL(document.querySelector('script[src*="js/main.js"]').src).searchParams.get('v');
+const RUNNING_VERSION = new URL(import.meta.url).searchParams.get('v');
 
 async function checkForUpdate() {
   if (document.visibilityState !== 'visible' || navigator.onLine === false) return;

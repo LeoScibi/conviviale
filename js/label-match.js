@@ -290,18 +290,43 @@ export async function match(index, views) {
   return { vectors, ranked };
 }
 
+// How much the words read off the label count against the picture. A word only one wine has
+// scores 1 in js/label-text.js, worth 0.12 here: more than the picture gap between the right wine
+// and the next on real scans (often under 0.05), so a readable producer name settles it.
+const TEXT_WEIGHT = 0.12;
+
+/**
+ * Join picture scores with label text: `image` is a Map of ingId → picture score (averaged over
+ * the last few frames), `text` a Map of ingId → text score. Returns [{ ingId, score, image, text }]
+ * best first.
+ */
+export function fuse(image, text) {
+  const out = [];
+  const add = (ingId, s) => {
+    const t = text?.get(ingId) || 0;
+    out.push({ ingId, score: s + TEXT_WEIGHT * Math.min(t, 2), image: s, text: t });
+  };
+  for (const [ingId, s] of image) add(ingId, s);
+  // A wine with no photo yet can still be found by name, with a middling picture score.
+  if (text) for (const ingId of text.keys()) if (!image.has(ingId)) add(ingId, 0.5);
+  return out.sort((a, b) => b.score - a.score);
+}
+
 /**
  * How sure a ranking is: 'sure' when the best wine is clearly ahead, 'maybe' when it's close,
- * 'none' when nothing looks alike. Measured on the wine photos with simulated phone shots: a
- * label scores about 0.77-0.90 against its own wine, while a frame with no label in it (a wall,
- * a shelf) scores at most about 0.56 against anything. Every wine looks fairly alike to the model
- * (the runner-up is often 0.75), so the gap to the second wine is what makes a match sure.
+ * 'none' when nothing looks alike.
+ *
+ * Set from real scans (Nov 2026): a phone shot of a label scores only 0.61-0.73 against its own
+ * wine's photo, and some other wine is often as close or closer, so the picture alone is rarely
+ * sure. A frame with no label in it (a wall, a shelf) scores at most about 0.56. What makes a
+ * match sure is a clear lead, which mostly comes from a telling word read off the label.
  */
 export function confidence(ranked) {
   const [a, b] = ranked;
-  if (!a || a.score < 0.6) return 'none';
+  if (!a || (a.image < 0.55 && !a.text)) return 'none';
   const gap = a.score - (b?.score ?? 0);
-  return a.score >= 0.68 && gap >= 0.06 ? 'sure' : 'maybe';
+  const readName = a.text >= 0.9 && a.text - (b?.text || 0) >= 0.5 && a.image >= 0.45;
+  return readName || (a.score >= 0.62 && gap >= 0.08) ? 'sure' : 'maybe';
 }
 
 /** Remember a confirmed scan (its first view: the label inside the guide) for this wine. */

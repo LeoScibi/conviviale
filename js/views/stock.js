@@ -11,6 +11,7 @@ import { esc, money, formDialog, toast, reportError, matches, parkToasts } from 
 import { chosenPrice, isWine, displayName } from '../costing.js';
 import { photoFor } from '../photos.js';
 import * as labels from '../label-match.js';
+import * as labelText from '../label-text.js';
 
 // The order styles run in on the list; anything else comes after.
 const STYLE_ORDER = ['Sparkling', 'White', 'Orange', 'Rosé', 'Red', 'Sweet', 'Fortified'];
@@ -501,6 +502,11 @@ async function openScanner(count) {
   let last = null;           // the latest { vectors, ranked }
   let streak = { id: null, n: 0 };
   let skip = null;           // a wine just counted: don't jump straight back to it
+  let avg = new Map();       // picture scores averaged over the last few frames, so one odd frame doesn't decide
+  let seen = { scores: new Map(), at: 0 }; // what the latest words read off the label point to
+  const textIndex = labelText.buildTextIndex(wines);
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  const forget = () => { avg = new Map(); seen = { scores: new Map(), at: 0 }; };
 
   const stop = () => {
     running = false;
@@ -525,6 +531,7 @@ async function openScanner(count) {
       onDone: result => {
         if (result === 'saved' || result === 'cleared') skip = String(ingId);
         streak = { id: null, n: 0 };
+        forget();
         picks.innerHTML = '';
         paused = false;
         if (result === 'other') say('Pick the right wine below, or search instead.');
@@ -554,6 +561,9 @@ async function openScanner(count) {
     return;
   }
 
+  // The text reader downloads alongside the picture model; without it, pictures alone are used.
+  const textReady = labelText.load().then(() => true, err => { console.warn('Label text reader unavailable', err); return false; });
+
   try {
     say('Loading the label reader…');
     await labels.load((loaded, total) => say(`Downloading the label reader (first time only): ${Math.round((100 * loaded) / total)}%`));
@@ -571,6 +581,21 @@ async function openScanner(count) {
   }
   say('Fill the frame with the label');
 
+  /** Read the label's words over and over, as fast as the phone manages (about once a second). */
+  async function readLoop() {
+    if (!(await textReady)) return;
+    while (running && dlg.open) {
+      if (paused || video.readyState < 2 || !video.videoWidth) { await wait(300); continue; }
+      try {
+        const words = await labelText.readWords(video, guideBox(video, dlg.querySelector('.scan-guide')));
+        if (!paused) seen = { scores: labelText.textScores(textIndex, words), at: Date.now() };
+      } catch (err) {
+        console.warn('Label text not read', err);
+        await wait(1000);
+      }
+    }
+  }
+
   async function tick() {
     if (!running || paused || !dlg.open) return;
     if (video.readyState < 2 || !video.videoWidth) { setTimeout(tick, 200); return; }
@@ -578,7 +603,8 @@ async function openScanner(count) {
       const guide = guideBox(video, dlg.querySelector('.scan-guide'));
       last = await labels.match(idx, labels.frameViews(video, guide));
       if (!running || paused) return;
-      showPicks(last.ranked);
+      for (const r of last.ranked) avg.set(r.ingId, avg.has(r.ingId) ? 0.5 * avg.get(r.ingId) + 0.5 * r.score : r.score);
+      showPicks(labels.fuse(avg, Date.now() - seen.at < 4000 ? seen.scores : null));
     } catch (err) {
       console.error(err);
       say(`Couldn’t read the label: ${err.message}`);
@@ -621,6 +647,7 @@ async function openScanner(count) {
   }
 
   tick();
+  readLoop();
 }
 
 /** Where the on-screen guide falls on the video's own pixels (the video fills the stage, cropped). */
