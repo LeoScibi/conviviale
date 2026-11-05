@@ -9,6 +9,7 @@ import {
   isWine, displayName,
 } from '../costing.js';
 import { normName } from '../recipe-paste.js';
+import { withImpact } from '../price-impact.js';
 
 const UNIT_WORD = { g: 'weight', ml: 'volume', each: 'each' };
 
@@ -134,7 +135,8 @@ export function openPriceForm({ price = null, supplierId = null, ingId = null, o
         .map(l => store.byId('RECIPES', l.RECIPE_ID)?.NAME).filter(Boolean));
       const warn = used.size ? `\n\n${[...used].join(', ')} ${used.size === 1 ? 'counts' : 'count'} in this pack and will need another unit.` : '';
       if (!confirm(`Remove this price from the supplier’s list?${warn}`)) return false;
-      await store.remove({ SUPPLIER_PRICES: [price.PRICE_ID] });
+      await withImpact(() => store.remove({ SUPPLIER_PRICES: [price.PRICE_ID] }),
+        `${displayName(ing) || 'Price'} · ${supplierName(price.SUPPLIER_ID)}: price removed`);
       toast('Price removed');
       onDeleted?.();
       return true;
@@ -175,12 +177,14 @@ export function openPriceForm({ price = null, supplierId = null, ingId = null, o
         PACK_SIZE: size, PACK_UNIT: unit, PACK_PRICE: d.PACK_PRICE,
         ...(priceChanged ? { UPDATED: store.today() } : {}),
       };
-      let id;
-      if (isNew) id = await store.create('SUPPLIER_PRICES', rec);
-      else {
-        id = price.PRICE_ID;
-        await store.update('SUPPLIER_PRICES', id, rec);
-      }
+      const pack = [packLabel(size, unit), rec.PACK_NAME].filter(Boolean).join(' ');
+      const heading = `${displayName(target)} · ${supplierName(supplier)} · ${pack}: ${isNew || price.PACK_PRICE === ''
+        ? `new price ${money(d.PACK_PRICE)}` : `${money(price.PACK_PRICE)} → ${money(d.PACK_PRICE)}`}`;
+      const id = await withImpact(async () => {
+        if (isNew) return store.create('SUPPLIER_PRICES', rec);
+        await store.update('SUPPLIER_PRICES', price.PRICE_ID, rec);
+        return price.PRICE_ID;
+      }, heading);
       if (priceChanged) {
         try {
           await store.logPrices([{ ING_ID: target.ING_ID, SUPPLIER_ID: supplier, PRICE_ID: id, PACK_PRICE: d.PACK_PRICE, INVOICE_REF: d.INVOICE_REF }]);

@@ -30,12 +30,12 @@ export function menuTabs(active) {
   return `<nav class="segs" aria-label="Menu type">${tab('food', '#/menus', 'Food')}${tab('wine', '#/winemenus', 'Wine')}</nav>`;
 }
 
-const serveOf = l => (String(l.SERVE).toLowerCase() === 'bottle' ? 'bottle' : 'glass');
+export const serveOf = l => (String(l.SERVE).toLowerCase() === 'bottle' ? 'bottle' : 'glass');
 const linesOf = menuId => store.rows('WINE_MENU_LINES').filter(l => String(l.MENU_ID) === String(menuId));
 const allWines = () => store.rows('INGREDIENTS').filter(isWine);
 
 /** What one serve of a wine costs: a glass by volume, a bottle as the pack the supplier sells. */
-function serveCost(wine, serve, sizeMl) {
+export function serveCost(wine, serve, sizeMl) {
   if (!wine) return null;
   if (serve === 'bottle') {
     const p = chosenPrice(wine)?.price;
@@ -46,7 +46,7 @@ function serveCost(wine, serve, sizeMl) {
 }
 
 /** GP% on the net price (sell prices include VAT), as on recipes. */
-function gpPct(cost, sell) {
+export function gpPct(cost, sell) {
   if (cost == null || !(Number(sell) > 0)) return null;
   const net = Number(sell) / (1 + RECIPE_DEFAULTS.VAT_RATE / 100);
   return ((net - cost) / net) * 100;
@@ -56,7 +56,7 @@ function gpPct(cost, sell) {
 const flatMargin = (cost, serve) => serve === 'bottle' && cost > WINE_PRICING.FLAT_OVER;
 
 /** The menu price for a serve, inc VAT: cost + £50 for dearer bottles, otherwise 70% GP. */
-function suggestedPrice(cost, serve) {
+export function suggestedPrice(cost, serve) {
   const net = flatMargin(cost, serve) ? cost + WINE_PRICING.FLAT_MARGIN : cost / (1 - RECIPE_DEFAULTS.TARGET_GP / 100);
   return Math.round(net * (1 + RECIPE_DEFAULTS.VAT_RATE / 100) * 100) / 100;
 }
@@ -66,7 +66,7 @@ const ruleText = (cost, serve) => (flatMargin(cost, serve)
   ? `cost + ${money(WINE_PRICING.FLAT_MARGIN)} + VAT` : `${RECIPE_DEFAULTS.TARGET_GP}% GP`);
 
 /** Is a line priced at or above what the rule asks for? null when it can't be judged. */
-const onTarget = l => (l.cost == null || l.sell == null ? null : l.sell >= suggestedPrice(l.cost, l.serve) - 0.005);
+export const onTarget = l => (l.cost == null || l.sell == null ? null : l.sell >= suggestedPrice(l.cost, l.serve) - 0.005);
 
 function build(menuId) {
   const lines = linesOf(menuId).map(line => {

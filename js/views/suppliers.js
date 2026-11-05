@@ -7,6 +7,7 @@ import { PACK_UNIT_OPTIONS, normalisePack, ingredientUnit, priceUnitCost, prices
 import { normName } from '../recipe-paste.js';
 import { parsePriceList, matchProduct } from '../pricelist-paste.js';
 import { pdfToLines } from '../pdf-text.js';
+import { withImpact } from '../price-impact.js';
 import { openPriceForm, priceRowHtml } from './prices.js';
 
 const state = { q: '' };
@@ -510,26 +511,30 @@ async function savePasted() {
     if (switches.size) await store.updateMany('INGREDIENTS', [...switches].map(([id, unit]) => ({ id, record: { UNIT: unit } })));
     const now = store.today();
 
-    // 2. Updates to entries already on the list.
+    // 2–3. Updates and additions, showing afterwards which recipes and wine serves they moved.
     const updates = chosen.filter(r => r.existing);
     const changed = updates.filter(r => Number(r.existing.PACK_PRICE) !== r.price);
-    if (updates.length) {
-      await store.updateMany('SUPPLIER_PRICES', updates.map(r => ({
-        id: r.existing.PRICE_ID,
-        record: {
-          ING_ID: ingOf(r), PACK_SIZE: r.size, PACK_UNIT: r.unit, PACK_PRICE: r.price,
-          ...(r.code ? { SUPPLIER_CODE: r.code } : {}), ...(r.desc ? { PRODUCT_NAME: r.desc } : {}),
-          ...(Number(r.existing.PACK_PRICE) !== r.price ? { UPDATED: now } : {}),
-        },
-      })));
-    }
-
-    // 3. New entries.
     const adds = chosen.filter(r => !r.existing);
-    const newIds = adds.length ? await store.createMany('SUPPLIER_PRICES', adds.map(r => ({
-      SUPPLIER_ID: pasteSupplier, ING_ID: ingOf(r), SUPPLIER_CODE: r.code, PRODUCT_NAME: r.desc,
-      PACK_SIZE: r.size, PACK_UNIT: r.unit, PACK_PRICE: r.price, UPDATED: now,
-    }))) : [];
+    const supplierLabel = store.byId('SUPPLIERS', pasteSupplier)?.NAME || 'Supplier';
+    const newIds = await withImpact(async () => {
+      // 2. Updates to entries already on the list.
+      if (updates.length) {
+        await store.updateMany('SUPPLIER_PRICES', updates.map(r => ({
+          id: r.existing.PRICE_ID,
+          record: {
+            ING_ID: ingOf(r), PACK_SIZE: r.size, PACK_UNIT: r.unit, PACK_PRICE: r.price,
+            ...(r.code ? { SUPPLIER_CODE: r.code } : {}), ...(r.desc ? { PRODUCT_NAME: r.desc } : {}),
+            ...(Number(r.existing.PACK_PRICE) !== r.price ? { UPDATED: now } : {}),
+          },
+        })));
+      }
+
+      // 3. New entries.
+      return adds.length ? await store.createMany('SUPPLIER_PRICES', adds.map(r => ({
+        SUPPLIER_ID: pasteSupplier, ING_ID: ingOf(r), SUPPLIER_CODE: r.code, PRODUCT_NAME: r.desc,
+        PACK_SIZE: r.size, PACK_UNIT: r.unit, PACK_PRICE: r.price, UPDATED: now,
+      }))) : [];
+    }, `${supplierLabel} price list: ${changed.length} price${changed.length === 1 ? '' : 's'} changed, ${adds.length} added`);
 
     // 4. Price history for every new or changed price.
     await store.logPrices([

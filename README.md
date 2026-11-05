@@ -54,13 +54,16 @@ in `index.html` (one search-and-replace), and add any new `js/` module to the im
 | `js/pdf-text.js` | Reads a PDF into text rows (pdf.js) |
 | `js/units.js` | Recipe measurement families (weight / volume / each) and conversions |
 | `js/recipe-cost.js` | Live recipe costing: line costs, sub-recipes, cost per portion, GP, allergen roll-up, loop guard |
-| `js/recipe-paste.js` | Paste-a-recipe parser (ported from Carisma Ops) |
+| `js/recipe-paste.js` | Paste-a-recipe parser (ported from Carisma Ops); also reads the recipe sheet's one-line add box ("2 bag spinach") |
+| `js/method.js` | A recipe's METHOD as numbered steps: splitting the stored text into steps and joining them back |
+| `js/price-impact.js` | `withImpact()`: wraps a supplier-price write and then shows which recipes and wine serves it moved, flagging any now below target |
+| `js/sortable.js` | Drag-to-reorder by a grip (mouse, touch, or ↑ / ↓ on a focused grip), used for recipe lines and method steps |
 | `js/photos.js` | Wine photos: shrinks a picture to a small JPEG and keeps it as text in the PHOTOS tab |
 | `js/wine-paste.js` | Wine-list parser for "Add many" on the Wines page (producer, wine, vintage, size, style, price) |
 | `js/ui.js` | Escaping, formatting, toasts, form dialog |
 | `js/item-search.js` | `<item-search>`: the search-box picker used wherever a record (wine, recipe…) is chosen from a list. Use it instead of a dropdown for any new picker, and with `allow-new` instead of a `<datalist>` for a text field with suggestions. All searching goes through `matches` / `fold` in `ui.js`, which ignore case and accents |
 | `js/views/*.js` | One module per screen (`wines.js` is the wine list); `prices.js` is the shared price-list entry form |
-| `js/icons.js` | Line icons |
+| `js/icons.js` | Line icons, including one per allergen (`allergenIcon`) |
 | `assets/` | Brand wordmarks, tree-ring pattern, paper and olive textures, home-screen icons |
 
 ## Brand
@@ -148,6 +151,12 @@ full-screen forms. It can be added to the home screen and opens like an app.
   the line's unit list or write it in a pasted recipe. The line stores the pack name in UNIT and the
   price row in PRICE_ID, and costs at that pack's own price as bought (yield doesn't apply). A line
   typed into the sheet as `2 | bag` with no PRICE_ID finds the pack by name.
+- METHOD is one cell, one step per line, so it can still be typed in the sheet. The recipe shows it as
+  numbered steps that can be added, edited, removed and dragged into order there. Numbering typed in
+  ("1.", "Step 2:") is dropped; an older method written as paragraphs reads one paragraph per step.
+- Saving a supplier price (one at a time or a whole price list) shows what it changed: each recipe's
+  cost per portion and GP before and after, and each wine-menu serve's cost and GP, with anything now
+  below its target first. Nothing is shown if no cost moved.
 - On a wine menu a bottle's price is worked out from its cost (ex VAT): over £20 it is cost + £50,
   then + 20% VAT; at £20 or under it is priced to 70% GP, then + 20% VAT (`WINE_PRICING` in
   `js/config.js`). Glasses are priced to 70% GP. The worked-out bottle price is filled in when a

@@ -5,7 +5,9 @@
 import * as store from '../store.js';
 import '../item-search.js';
 import { RECIPE_TYPES, RECIPE_DEFAULTS } from '../config.js';
-import { icons } from '../icons.js';
+import { icons, allergenIcon } from '../icons.js';
+import { sortable } from '../sortable.js';
+import { parseSteps, joinSteps } from '../method.js';
 import { esc, money, formDialog, toast, reportError, byName, sameName, matches, parkToasts } from '../ui.js';
 import {
   formatUnitCost, usableUnitCost, chosenPrice, displayName, packsFor, packValue, packOptionLabel, lineUnitFields, linePack, packNamed,
@@ -142,7 +144,7 @@ function recipeFields() {
       hint: `Blank = ${RECIPE_DEFAULTS.VAT_RATE}%` },
     { name: 'TARGET_GP%', label: 'Target GP %', type: 'number', min: 0, max: 99, step: 'any', inputmode: 'decimal', half: true,
       hint: `Blank = ${RECIPE_DEFAULTS.TARGET_GP}%` },
-    { name: 'METHOD', label: 'Method', type: 'textarea', rows: 6, wide: true },
+    { name: 'METHOD', label: 'Method', type: 'textarea', rows: 6, wide: true, hint: 'One step per line. Steps can also be added and reordered on the recipe.' },
   ];
 }
 
@@ -183,8 +185,15 @@ function openRecipeForm(rec) {
 }
 
 // ============================================================ recipe detail
+//
+// One compact sheet: the figures across the top, allergens under them, then ingredients and
+// method side by side on wide screens. Ingredients are added on one line ("2 bag spinach")
+// with the cost shown before anything is saved; lines and method steps reorder by dragging.
 
-const ds = { id: null, open: null, swap: null, swapQ: '', add: emptyAdd(), scaleTo: '', busy: false };
+const ds = {
+  id: null, open: null, swap: null, swapQ: '', add: emptyAdd(), scaleTo: '', busy: false,
+  savedAt: 0, step: null, stepDraft: '',
+};
 let pendingPaste = null; // ingredient list typed into the New recipe form, read once it opens
 let dlg = null;
 
@@ -232,7 +241,7 @@ export function openDetail(id) {
     return;
   }
   ensureDialog();
-  if (ds.id !== id) Object.assign(ds, { id, open: null, swap: null, swapQ: '', add: emptyAdd(), scaleTo: '' });
+  if (ds.id !== id) Object.assign(ds, { id, open: null, swap: null, swapQ: '', add: emptyAdd(), scaleTo: '', step: null, stepDraft: '' });
   if (!dlg.open) dlg.showModal();
   parkToasts();
   renderDetail();
@@ -260,51 +269,53 @@ function scaleFactor(rec) {
   return ds.scaleTo !== '' && t > 0 && base > 0 ? t / base : 1;
 }
 
+// ---------- figures and allergens
+
+const fig = (label, value, small, cls = '') =>
+  `<div class="r-fig ${cls}"><span>${label}</span><b>${value}</b>${small ? `<small>${small}</small>` : ''}</div>`;
+
 function summaryHtml(c) {
   const rec = c.rec;
   if (isSub(rec)) {
-    const stats = [
-      c.perBase != null ? `<div><span>Unit cost</span><b>${formatUnitCost(c.perBase, BASE[c.family])}</b></div>` : '',
-      Number(rec.PORTIONS) > 0 ? `<div><span>Per portion</span><b>${money(c.perPortion)}</b></div>` : '',
-    ].join('');
     return `
-      <section class="summary">
-        <div class="summary-main">
-          <div class="stat-big"><span class="overline">Batch cost</span><strong>${money(c.total)}</strong>
-            <small>${esc(describeYield(rec)) || 'No yield set'}</small></div>
+      <section class="r-summary">
+        <div class="r-figs">
+          ${fig('Batch cost', money(c.total), esc(describeYield(rec)) || 'No yield set', 'main')}
+          ${c.perBase != null ? fig('Unit cost', formatUnitCost(c.perBase, BASE[c.family])) : ''}
+          ${Number(rec.PORTIONS) > 0 ? fig('Per portion', money(c.perPortion)) : ''}
         </div>
-        ${stats ? `<div class="summary-grid">${stats}</div>` : ''}
       </section>`;
   }
-  const gpBlock = c.gpPct != null ? `
-    <div class="stat-gp ${c.onTarget ? 'ok' : 'low'}"><span class="overline">Gross profit</span>
-      <strong>${c.gpPct.toFixed(1)}%</strong><small>Target ${fmtQty(c.target)}%</small></div>` : '';
+  const portions = `${money(c.total)} · ${fmtQty(c.portions)} portion${c.portions === 1 ? '' : 's'}`;
+  const sell = c.sell != null
+    ? fig('Sells', money(c.sell), `${money(c.net)} ex VAT`)
+    : `<div class="r-fig"><span>Sells</span><button type="button" class="link-btn" data-act="edit">Add sell price</button></div>`;
+  const gp = c.gpPct != null
+    ? fig('GP', `${c.gpPct.toFixed(1)}%`, `${money(c.gp)} · target ${fmtQty(c.target)}%`, `gp ${c.onTarget ? 'ok' : 'low'}`)
+    : '';
   const meter = c.gpPct != null ? `
     <div class="gp-meter" role="img" aria-label="GP ${c.gpPct.toFixed(1)}% against a ${fmtQty(c.target)}% target">
       <div class="gp-fill ${c.onTarget ? 'ok' : 'low'}" style="width:${Math.max(0, Math.min(100, c.gpPct))}%"></div>
       <div class="gp-target" style="left:${Math.max(0, Math.min(100, c.target))}%"></div>
     </div>` : '';
-  const grid = c.gpPct != null ? `
-    <div class="summary-grid">
-      <div><span>Sell inc VAT</span><b>${money(c.sell)}</b></div>
-      <div><span>Net of ${fmtQty(c.vat)}% VAT</span><b>${money(c.net)}</b></div>
-      <div><span>GP per portion</span><b>${money(c.gp)}</b></div>
-    </div>` : '';
   const suggest = c.suggested != null && c.total > 0 && !c.onTarget
     ? `<p class="suggest">${c.sell != null ? 'To hit' : 'For'} ${fmtQty(c.target)}% GP, sell at <b>${money(c.suggested)}</b> inc VAT.</p>`
     : '';
   return `
-    <section class="summary">
-      <div class="summary-main">
-        <div class="stat-big"><span class="overline">Cost per portion</span><strong>${money(c.perPortion)}</strong>
-          <small>${money(c.total)} for ${fmtQty(c.portions)} portion${c.portions === 1 ? '' : 's'}</small></div>
-        ${gpBlock}
-      </div>
-      ${meter}${grid}
-      ${c.sell == null ? '<p class="muted small">No sell price yet. Add one under Edit details to see GP.</p>' : ''}
-      ${suggest}
+    <section class="r-summary">
+      <div class="r-figs">${fig('Cost / portion', money(c.perPortion), portions, 'main')}${sell}${gp}</div>
+      ${meter}${suggest}
     </section>`;
 }
+
+/** Allergen chips (icon + name) for the recipe, or icon-only marks for one line. */
+function allergenChips(list) {
+  return list.length
+    ? `<div class="r-allergens" aria-label="Allergens">${list.map(a => `<span class="allergen-chip">${allergenIcon(a)}${esc(a)}</span>`).join('')}</div>`
+    : '<p class="r-allergens none">No allergens recorded on its ingredients.</p>';
+}
+const allergenMarks = list => (list.length
+  ? `<span class="allergen-marks">${list.map(a => `<span title="${esc(a)}" aria-label="${esc(a)}">${allergenIcon(a)}</span>`).join('')}</span>` : '');
 
 function renderDetail() {
   if (!dlg || !ds.id) return;
@@ -322,34 +333,34 @@ function renderDetail() {
     .map(l => coster.recs.get(String(l.RECIPE_ID)))
     .filter((r, i, arr) => r && arr.indexOf(r) === i);
 
-  const { label } = scaleBasis(rec);
+  const { label, base } = scaleBasis(rec);
   dlg.querySelector('[data-d-body]').innerHTML = `
     ${summaryHtml(c)}
-    <section class="detail-block">
-      <h3 class="section-title">Allergens</h3>
-      ${c.allergens.length
-        ? `<div class="tags">${c.allergens.map(a => `<span class="tag allergen">${esc(a)}</span>`).join('')}</div>`
-        : '<p class="muted small">None of the 14 major allergens recorded on its ingredients.</p>'}
-    </section>
+    ${allergenChips(c.allergens)}
     ${c.unpriced ? `<p class="notice">${c.unpriced} line${c.unpriced === 1 ? ' isn’t' : 's aren’t'} fully costed, so the cost is understated. Tap a highlighted line to fix it.</p>` : ''}
     ${c.circular ? '<p class="notice">This recipe uses a sub-recipe that loops back into it. That line is not costed.</p>' : ''}
-    ${usedIn.length ? `<p class="muted small used-in">Used in ${usedIn.map(r => `<a href="#/recipes/${encodeURIComponent(r.RECIPE_ID)}">${esc(r.NAME)}</a>`).join(', ')}</p>` : ''}
-    <section class="detail-block">
-      <div class="section-head">
-        <h3 class="section-title">Ingredients</h3>
-        <span class="muted small" data-lines-total></span>
-      </div>
-      <label class="scale-row">
-        <span>Scale to</span>
-        <input type="number" inputmode="decimal" min="0" step="any" data-scale value="${esc(ds.scaleTo)}" placeholder="${esc(fmtQty(scaleBasis(rec).base))}">
-        <span>${esc(label)}</span>
-        <b data-scale-factor></b>
-      </label>
-      <div data-lines></div>
-    </section>
-    ${rec.METHOD ? `<section class="detail-block"><h3 class="section-title">Method</h3><div class="method">${esc(rec.METHOD)}</div></section>` : ''}`;
+    <div class="r-cols">
+      <section class="r-block r-ing">
+        <div class="section-head">
+          <h3 class="section-title">Ingredients</h3>
+          <span class="r-total" data-lines-total aria-live="polite"></span>
+        </div>
+        <label class="scale-row">
+          <span>Scale to</span>
+          <input type="number" inputmode="decimal" min="0" step="any" data-scale value="${esc(ds.scaleTo)}" placeholder="${esc(fmtQty(base))}">
+          <span>${esc(label)}</span>
+          <b data-scale-factor></b>
+        </label>
+        <div data-lines></div>
+      </section>
+      <section class="r-block r-method" data-method>${methodHtml(rec)}</section>
+    </div>
+    ${usedIn.length ? `<p class="muted small used-in">Used in ${usedIn.map(r => `<a href="#/recipes/${encodeURIComponent(r.RECIPE_ID)}">${esc(r.NAME)}</a>`).join(', ')}</p>` : ''}`;
   renderLines(coster);
+  bindSteps();
 }
+
+// ---------- ingredient lines
 
 /**
  * Unit dropdown for a line. `current` is a unit ("g") or a pack value ("pack:SP-0003").
@@ -381,6 +392,19 @@ function lineUnitValue(line, ing) {
 
 const PROBLEM = { unpriced: 'No price', missing: 'Missing', unit: 'Unit mismatch', circular: 'Loops back', pack: 'Pack gone' };
 
+/** "2 bags", "500 g", "1 portion" for a costed line at `qty`. */
+function qtyText(lc, qty) {
+  const unit = lc.pack ? lc.packName : normUnit(lc.line.UNIT);
+  return `${fmtQty(qty)} ${unit === 'portion' ? plural('portion', qty) : lc.pack ? plural(unit, qty) : unit}`;
+}
+
+function rateText(lc) {
+  if (lc.rate == null) return '';
+  if (lc.rateUnit === 'portion') return `${money(lc.rate)}/portion`;
+  if (lc.rateUnit === 'pack') return `${money(lc.rate)}/${lc.packName}`;
+  return formatUnitCost(lc.rate, lc.rateUnit);
+}
+
 function lineHtml(lc, factor, supplierNames) {
   const l = lc.line;
   const id = l.LINE_ID ? String(l.LINE_ID) : '';
@@ -391,22 +415,21 @@ function lineHtml(lc, factor, supplierNames) {
     : lc.item ? [supplierNames.get(String(supplierId)) || 'No supplier price',
       lc.pack ? `${packLabel(lc.pack.PACK_SIZE, lc.pack.PACK_UNIT)} ${lc.packName}` : '',
       lc.item.ACTIVE ? '' : 'inactive'].filter(Boolean).join(' · ') : 'Ingredient';
-  const qty = Number(l.QTY) * factor;
-  const unit = lc.pack ? lc.packName : normUnit(l.UNIT);
-  const qtyText = `${fmtQty(qty)} ${unit === 'portion' ? plural('portion', qty) : lc.pack ? plural(unit, qty) : unit}`;
   const hardProblem = PROBLEM[lc.problem];
-  const rate = lc.rate == null ? '' : lc.rateUnit === 'portion' ? `${money(lc.rate)}/portion`
-    : lc.rateUnit === 'pack' ? `${money(lc.rate)}/${lc.packName}` : formatUnitCost(lc.rate, lc.rateUnit);
+  const noId = 'This line was added in the sheet without a LINE_ID, so it can only be edited there.';
   return `
     <div class="line${lc.problem ? ' flag' : ''}${open ? ' open' : ''}" data-line="${esc(id)}">
-      <button type="button" class="line-main" data-act="toggle" ${id ? '' : 'disabled title="This line was added in the sheet without a LINE_ID, so it can only be edited there."'} aria-expanded="${open ? 'true' : 'false'}">
-        <span class="line-text">
-          <span class="line-name">${esc(name)}</span>
-          <span class="line-sub">${esc(kind)}${lc.problem === 'partial' ? ' · part-costed' : ''}</span>
-        </span>
-        <span class="line-qty">${esc(qtyText)}</span>
-        <span class="line-cost">${hardProblem ? `<span class="warn">${hardProblem}</span>` : money(lc.cost * factor)}<small>${rate}</small></span>
-      </button>
+      <div class="line-row">
+        <button type="button" class="grip" data-grip ${id ? `aria-label="Move ${esc(name)} (drag, or use the arrow keys)"` : `disabled title="${noId}"`}>${icons.grip}</button>
+        <button type="button" class="line-main" data-act="toggle" ${id ? '' : `disabled title="${noId}"`} aria-expanded="${open ? 'true' : 'false'}">
+          <span class="line-qty">${esc(qtyText(lc, Number(l.QTY) * factor))}</span>
+          <span class="line-text">
+            <span class="line-name">${esc(name)}${allergenMarks(lc.allergens)}</span>
+            <span class="line-sub">${esc(kind)}${lc.problem === 'partial' ? ' · part-costed' : ''}</span>
+          </span>
+          <span class="line-cost">${hardProblem ? `<span class="warn">${hardProblem}</span>` : money(lc.cost * factor)}<small>${rateText(lc)}</small></span>
+        </button>
+      </div>
       ${open ? lineEditorHtml(lc, factor) : ''}
     </div>`;
 }
@@ -421,6 +444,7 @@ function lineEditorHtml(lc, factor) {
         <select data-edit-unit aria-label="Unit">${lineUnitOptions(lc, lineUnitValue(l, lc.item))}</select>
         <button type="button" class="btn primary sm" data-act="save-qty">Save</button>
       </div>
+      <p class="proj" data-proj aria-live="polite"></p>
       ${factor !== 1 ? '<p class="hint">You’re editing the base recipe, not the scaled amounts.</p>' : ''}
       ${lc.problem === 'unpriced' ? '<p class="hint">This ingredient has no price yet. Tap Open to add one.</p>' : ''}
       ${lc.problem === 'unit' ? '<p class="hint">This unit doesn’t match how the item is measured. Pick another unit.</p>' : ''}
@@ -428,8 +452,6 @@ function lineEditorHtml(lc, factor) {
       <div class="line-actions">
         ${lc.item ? `<button type="button" class="btn sm" data-act="open-item">Open</button>` : ''}
         <button type="button" class="btn sm" data-act="swap">${swapping ? 'Cancel swap' : 'Swap'}</button>
-        <button type="button" class="icon-btn sm" data-act="up" aria-label="Move up">${icons.up}</button>
-        <button type="button" class="icon-btn sm" data-act="down" aria-label="Move down">${icons.down}</button>
         <button type="button" class="btn sm danger" data-act="remove">Remove</button>
       </div>
       ${swapping ? `
@@ -442,6 +464,12 @@ function lineEditorHtml(lc, factor) {
     </div>`;
 }
 
+/** "6 lines · £12.30", with a Saved mark for a moment after a change. */
+function totalHtml(c, factor) {
+  const saved = Date.now() - ds.savedAt < 2500 ? '<span class="badge saved">Saved</span>' : '';
+  return `${c.lines.length} line${c.lines.length === 1 ? '' : 's'} · <b>${money(c.total * factor)}</b>${saved}`;
+}
+
 function renderLines(coster = createCoster()) {
   const host = dlg?.querySelector('[data-lines]');
   if (!host) return;
@@ -449,23 +477,60 @@ function renderLines(coster = createCoster()) {
   const factor = scaleFactor(c.rec);
   const supplierNames = new Map(store.rows('SUPPLIERS').map(s => [String(s.SUPPLIER_ID), s.NAME]));
 
-  dlg.querySelector('[data-lines-total]').innerHTML =
-    `${c.lines.length} line${c.lines.length === 1 ? '' : 's'} · <b>${money(c.total * factor)}</b>`;
+  dlg.querySelector('[data-lines-total]').innerHTML = totalHtml(c, factor);
   dlg.querySelector('[data-scale-factor]').textContent = factor !== 1 ? `×${fmtQty(factor)}` : '';
 
   host.innerHTML = `
-    <div class="lines">${c.lines.map(lc => lineHtml(lc, factor, supplierNames)).join('')
-      || '<p class="muted small lines-empty">No ingredients yet. Search below to add the first one, or paste a list.</p>'}</div>
+    ${c.lines.length ? `<div class="lines" data-line-list>${c.lines.map(lc => lineHtml(lc, factor, supplierNames)).join('')}</div>`
+      : '<p class="muted small lines-empty">No ingredients yet. Type one below, like “2 bag spinach”, or paste a list.</p>'}
     <div class="add-line" data-addline>${addLineHtml(coster)}</div>`;
+  const list = host.querySelector('[data-line-list]');
+  if (list) sortable(list, { item: '.line', handle: '[data-grip]', id: el => el.dataset.line, onDrop: reorderLines });
 }
 
-// ---------- search (shared by the add row and swap)
+/**
+ * What the recipe would cost with one line changed (or added), before anything is saved:
+ * { line, total } in the recipe's own (unscaled) amounts, or null if the line can't be costed.
+ */
+function projection(lineRecord, replaceId = null) {
+  const coster = createCoster();
+  const c = coster.cost(ds.id);
+  const lc = coster.line({ SORT: '', _row: 0, ...lineRecord });
+  if (lc.problem && lc.problem !== 'partial') return { lc, line: null, total: null };
+  const old = replaceId ? c.lines.find(x => String(x.line.LINE_ID) === String(replaceId)) : null;
+  return { lc, line: lc.cost, total: c.total - (old ? old.cost : 0) + lc.cost, before: c.total };
+}
+
+/** Live preview while a line's quantity or unit is being edited. */
+function updateEditProjection(row) {
+  const lineId = row.dataset.line;
+  const line = store.byId('RECIPE_LINES', lineId);
+  const out = row.querySelector('[data-proj]');
+  if (!line || !out) return;
+  const qty = row.querySelector('[data-edit-qty]').value;
+  const unit = row.querySelector('[data-edit-unit]').value;
+  const ing = String(line.ITEM_TYPE).toUpperCase() === 'SUB' ? null : store.byId('INGREDIENTS', line.ITEM_ID);
+  const same = Number(qty) === Number(line.QTY) && unit === lineUnitValue(line, ing);
+  const totalEl = dlg.querySelector('[data-lines-total]');
+  if (same || !(Number(qty) > 0)) {
+    out.innerHTML = '';
+    totalEl.innerHTML = totalHtml(createCoster().cost(ds.id), scaleFactor(store.byId('RECIPES', ds.id)));
+    return;
+  }
+  const p = projection({ ...line, QTY: qty, ...lineUnitFields(unit, ing) }, lineId);
+  if (p.total == null) { out.innerHTML = '<span class="warn">That unit doesn’t fit this item.</span>'; return; }
+  const f = scaleFactor(store.byId('RECIPES', ds.id));
+  out.innerHTML = `Line <b>${money(p.line * f)}</b> · recipe <b>${money(p.total * f)}</b> <span class="badge proj">Projected, not saved yet</span>`;
+  totalEl.innerHTML = `${createCoster().linesOf(ds.id).length} lines · <b class="projected">${money(p.total * f)}</b><span class="badge proj">Projected</span>`;
+}
+
+// ---------- search and one-line add
 
 function searchItems(q) {
   if (!q.trim()) return [];
   const coster = createCoster();
   const ings = store.rows('INGREDIENTS').filter(i => i.ACTIVE)
-    .map(i => ({ type: 'ING', id: String(i.ING_ID), name: displayName(i), unpriced: usableUnitCost(i) == null }));
+    .map(i => ({ type: 'ING', id: String(i.ING_ID), name: displayName(i), unpriced: usableUnitCost(i) == null && !packsFor(i).length }));
   const recs = store.rows('RECIPES')
     .filter(r => !coster.wouldLoop(ds.id, r.RECIPE_ID))
     .map(r => ({ type: 'SUB', id: String(r.RECIPE_ID), name: r.NAME, unpriced: false }));
@@ -476,15 +541,46 @@ function searchItems(q) {
     .slice(0, 8);
 }
 
-function resultsHtml(q) {
-  if (!q.trim()) return '';
-  const items = searchItems(q);
-  return items.map(x => `
+function resultsHtml(q, { quick = null } = {}) {
+  if (!q.trim() && !quick) return '';
+  const items = searchItems(q).filter(x => !(quick && x.type === 'ING' && x.id === String(quick.ingId)));
+  return (quick ? quickHtml(quick) : '')
+    + items.map(x => `
       <button type="button" class="result" data-pick-type="${x.type}" data-pick-id="${esc(x.id)}">
         <span>${esc(x.name)}</span>
         <span class="tag${x.unpriced ? ' allergen' : ''}">${x.type === 'SUB' ? 'Sub-recipe' : x.unpriced ? 'Needs price' : 'Ingredient'}</span>
       </button>`).join('')
-    + `<button type="button" class="result create" data-act="create-ing">${icons.plus} New ingredient “${esc(q.trim())}”</button>`;
+    + (q.trim() ? `<button type="button" class="result create" data-act="create-ing">${icons.plus} New ingredient “${esc(q.trim())}”</button>` : '');
+}
+
+/**
+ * Read the add box as a whole line ("2 bag spinach", "200g ricotta"): the ingredient, quantity
+ * and unit, plus the name left to search with. null when it doesn't start with a number.
+ */
+function quickParse(text) {
+  if (!/^\s*(\d|[½¼¾⅓⅔⅛])/.test(text)) return null;
+  const [p] = parseText(text);
+  if (!p) return null;
+  let name = p.name;
+  // "bag spinach" → "spinach" once "bag" has been read as the pack.
+  if (isPackValue(p.unit) && p.word && normName(name).split(' ')[0] === normName(p.word)) name = name.trim().split(/\s+/).slice(1).join(' ');
+  return { ...p, name, ready: !!p.ingId && Number(p.qty) > 0 };
+}
+
+function quickHtml(p) {
+  if (!p.ready) return '';
+  const ing = store.byId('INGREDIENTS', p.ingId);
+  const proj = projection({ ITEM_TYPE: 'ING', ITEM_ID: p.ingId, QTY: p.qty, ...lineUnitFields(p.unit, ing) });
+  const label = isPackValue(p.unit) ? plural(lineUnitFields(p.unit, ing).UNIT, p.qty) : p.unit;
+  const cost = proj.total == null
+    ? `<small class="warn">${proj.lc.problem === 'unpriced' ? 'No price yet' : 'Unit doesn’t fit'}</small>`
+    : `<small>+${money(proj.line)} → <b>${money(proj.total)}</b> projected</small>`;
+  return `
+    <button type="button" class="result quick" data-act="quick-add">
+      <span><span class="quick-key">Enter</span> Add <b>${esc(fmtQty(p.qty))} ${esc(label)}</b> ${esc(ing.NAME)}</span>
+      ${cost}
+    </button>
+    ${p.note ? `<p class="hint warn">${esc(p.note)}</p>` : ''}`;
 }
 
 function defaultUnit(type, id) {
@@ -497,15 +593,20 @@ function defaultUnit(type, id) {
   return fam ? BASE[fam] : 'g';
 }
 
+function addResultsHtml() {
+  const quick = quickParse(ds.add.q);
+  return resultsHtml(quick ? quick.name : ds.add.q, { quick });
+}
+
 function addLineHtml(coster) {
   const a = ds.add;
   if (!a.pick) {
     return `
-      <label class="search-wrap">${icons.search}
-        <input type="search" class="search" data-add-q value="${esc(a.q)}" placeholder="Add ingredient or sub-recipe" autocomplete="off" aria-label="Add ingredient or sub-recipe">
+      <label class="search-wrap">${icons.plus}
+        <input type="search" class="search" data-add-q value="${esc(a.q)}" placeholder="Add: “2 bag spinach” or search" autocomplete="off" aria-label="Add an ingredient or sub-recipe, with its quantity">
       </label>
-      <div class="results" data-results>${resultsHtml(a.q)}</div>
-      <button type="button" class="btn sm paste-inline" data-act="paste">Paste a list of ingredients</button>`;
+      <div class="results" data-results>${addResultsHtml()}</div>
+      <button type="button" class="link-btn paste-inline" data-act="paste">Paste a list of ingredients</button>`;
   }
   const item = a.pick.type === 'SUB' ? store.byId('RECIPES', a.pick.id) : store.byId('INGREDIENTS', a.pick.id);
   const lc = {
@@ -528,15 +629,95 @@ function addLineHtml(coster) {
     </div>`;
 }
 
-/** Cost preview for the line being added, using the same maths as the coster. */
+/** Cost preview for the line being added: its own cost and the recipe's projected total. */
 function previewText() {
   const a = ds.add;
   if (!a.pick || !(Number(a.qty) > 0)) return 'Enter a quantity to see the cost.';
   const ing = a.pick.type === 'SUB' ? null : store.byId('INGREDIENTS', a.pick.id);
-  const lc = createCoster().line({ ITEM_TYPE: a.pick.type, ITEM_ID: a.pick.id, QTY: a.qty, ...lineUnitFields(a.unit, ing), SORT: '', _row: 0 });
-  if (lc.problem === 'unpriced') return 'This ingredient has no price yet, so it will cost as £0 until you add one.';
-  if (lc.problem === 'unit' || lc.problem === 'pack') return 'That unit doesn’t fit this item.';
-  return `Line cost <b>${money(lc.cost)}</b>`;
+  const p = projection({ ITEM_TYPE: a.pick.type, ITEM_ID: a.pick.id, QTY: a.qty, ...lineUnitFields(a.unit, ing) });
+  if (p.lc.problem === 'unpriced') return 'This ingredient has no price yet, so it will cost as £0 until you add one.';
+  if (p.total == null) return 'That unit doesn’t fit this item.';
+  return `Line <b>${money(p.line)}</b> · recipe ${money(p.before)} → <b>${money(p.total)}</b> <span class="badge proj">Projected</span>`;
+}
+
+// ---------- method steps
+
+const stepsOf = rec => parseSteps(rec?.METHOD);
+
+function methodHtml(rec) {
+  const steps = stepsOf(rec);
+  const item = (s, i) => (ds.step === i ? `
+    <li class="step editing" data-step="${i}">
+      <span class="step-n">${i + 1}</span>
+      <div class="step-edit">
+        <textarea data-step-text rows="3" aria-label="Step ${i + 1}">${esc(s)}</textarea>
+        <div class="line-actions">
+          <button type="button" class="btn primary sm" data-act="step-save">Save</button>
+          <button type="button" class="btn sm" data-act="step-cancel">Cancel</button>
+          <button type="button" class="btn sm danger" data-act="step-remove">Remove</button>
+        </div>
+      </div>
+    </li>` : `
+    <li class="step" data-step="${i}">
+      <button type="button" class="grip" data-grip aria-label="Move step ${i + 1} (drag, or use the arrow keys)">${icons.grip}</button>
+      <span class="step-n">${i + 1}</span>
+      <button type="button" class="step-text" data-act="step-edit" aria-label="Edit step ${i + 1}">${esc(s)}</button>
+    </li>`);
+  return `
+    <div class="section-head">
+      <h3 class="section-title">Method</h3>
+      <span class="muted small">${steps.length ? `${steps.length} step${steps.length === 1 ? '' : 's'}` : ''}</span>
+    </div>
+    ${steps.length ? `<ol class="steps" data-steps>${steps.map(item).join('')}</ol>` : '<p class="muted small">No method yet. Add the first step below.</p>'}
+    <div class="step-add">
+      <span class="step-n add">${steps.length + 1}</span>
+      <textarea data-step-new rows="1" placeholder="Add a step" aria-label="Add a step">${esc(ds.stepDraft)}</textarea>
+      <button type="button" class="btn sm" data-act="step-add">Add</button>
+    </div>`;
+}
+
+function renderMethod() {
+  const host = dlg?.querySelector('[data-method]');
+  if (!host) return;
+  host.innerHTML = methodHtml(store.byId('RECIPES', ds.id));
+  bindSteps();
+}
+
+function bindSteps() {
+  const list = dlg?.querySelector('[data-steps]');
+  if (!list) return;
+  sortable(list, {
+    item: '.step', handle: '[data-grip]', id: el => el.dataset.step,
+    onDrop: order => {
+      const steps = stepsOf(store.byId('RECIPES', ds.id));
+      saveSteps(order.map(i => steps[Number(i)]), 'Steps reordered');
+    },
+  });
+  list.querySelector('[data-step-text]')?.focus();
+}
+
+function saveSteps(steps, message) {
+  return run(async () => {
+    await store.update('RECIPES', ds.id, { METHOD: joinSteps(steps) });
+    ds.step = null;
+  }, message);
+}
+
+function addSteps() {
+  // Pasting several lines adds several steps.
+  const fresh = parseSteps(ds.stepDraft);
+  if (!fresh.length) return;
+  const steps = stepsOf(store.byId('RECIPES', ds.id));
+  ds.stepDraft = '';
+  saveSteps([...steps, ...fresh], fresh.length === 1 ? 'Step added' : `${fresh.length} steps added`)
+    .then(() => dlg.querySelector('[data-step-new]')?.focus({ preventScroll: true }));
+}
+
+function saveStep(i, text) {
+  const steps = stepsOf(store.byId('RECIPES', ds.id));
+  const parts = parseSteps(text);
+  steps.splice(i, 1, ...parts);
+  saveSteps(steps, parts.length ? 'Step saved' : 'Step removed');
 }
 
 // ---------- actions
@@ -547,6 +728,7 @@ async function run(fn, success) {
   dlg.classList.add('busy');
   try {
     await fn();
+    ds.savedAt = Date.now();
     if (success) toast(success);
   } catch (err) {
     reportError(err);
@@ -559,19 +741,34 @@ async function run(fn, success) {
 }
 
 const recipeLines = () => createCoster().linesOf(ds.id);
+const nextSort = () => recipeLines().reduce((m, l) => Math.max(m, Number(l.SORT) || 0), 0) + 1;
 
 function pickForAdd(type, id) {
-  ds.add = { q: '', pick: { type, id }, qty: '', unit: defaultUnit(type, id) };
+  // Keep a quantity already typed ("2 bag spin…") when the item is picked from the list.
+  const quick = quickParse(ds.add.q);
+  let qty = '';
+  let unit = defaultUnit(type, id);
+  if (quick && Number(quick.count) > 0) {
+    const ing = type === 'ING' ? store.byId('INGREDIENTS', id) : null;
+    const pack = ing ? packNamed(ing, quick.word) : null;
+    const fam = type === 'SUB' ? familyOf(store.byId('RECIPES', id)?.YIELD_UNIT) : ingredientFamily(ing);
+    if (pack) { qty = quick.count; unit = packValue(pack); } else if (quick.ingId === id) { qty = quick.qty; unit = quick.unit; } else if (fam && toBase(fam, 1, quick.unit) != null) {
+      qty = quick.qty;
+      unit = quick.unit;
+    } else qty = quick.count;
+  }
+  ds.add = { q: '', pick: { type, id }, qty: qty === '' ? '' : String(qty), unit };
   renderLines();
-  dlg.querySelector('[data-add-qty]')?.focus();
+  const input = dlg.querySelector('[data-add-qty]');
+  input?.focus();
+  if (qty !== '') input?.select();
 }
 
 function commitAdd() {
   const a = ds.add;
   const qty = Number(a.qty);
   if (!a.pick || !(qty > 0) || !a.unit) { toast('Enter a quantity greater than zero.', 'error'); return; }
-  const lines = recipeLines();
-  const sort = lines.reduce((m, l) => Math.max(m, Number(l.SORT) || 0), 0) + 1;
+  const sort = nextSort();
   const name = (a.pick.type === 'SUB' ? store.byId('RECIPES', a.pick.id) : store.byId('INGREDIENTS', a.pick.id))?.NAME;
   return run(async () => {
     const ing = a.pick.type === 'SUB' ? null : store.byId('INGREDIENTS', a.pick.id);
@@ -580,6 +777,21 @@ function commitAdd() {
     });
     ds.add = emptyAdd();
   }, `Added ${name}`).then(() => dlg.querySelector('[data-add-q]')?.focus({ preventScroll: true }));
+}
+
+/** Add the line typed in the add box ("2 bag spinach") as it stands. */
+function commitQuick() {
+  const p = quickParse(ds.add.q);
+  if (!p?.ready) return false;
+  const ing = store.byId('INGREDIENTS', p.ingId);
+  const fields = lineUnitFields(p.unit, ing);
+  const sort = nextSort();
+  run(async () => {
+    await store.create('RECIPE_LINES', { RECIPE_ID: ds.id, ITEM_TYPE: 'ING', ITEM_ID: p.ingId, QTY: Number(p.qty), ...fields, SORT: sort });
+    ds.add = emptyAdd();
+  }, `Added ${fmtQty(p.qty)} ${isPackValue(p.unit) ? plural(fields.UNIT, p.qty) : p.unit} ${ing.NAME}`)
+    .then(() => dlg.querySelector('[data-add-q]')?.focus({ preventScroll: true }));
+  return true;
 }
 
 function saveQty(lineId) {
@@ -592,7 +804,7 @@ function saveQty(lineId) {
   run(async () => {
     await store.update('RECIPE_LINES', lineId, { QTY: qty, ...lineUnitFields(unit, ing) });
     ds.open = null;
-  }, 'Quantity updated');
+  }).then(() => dlg.querySelector(`.line[data-line="${CSS.escape(lineId)}"] [data-act=toggle]`)?.focus({ preventScroll: true }));
 }
 
 function commitSwap(lineId, type, id) {
@@ -615,15 +827,12 @@ function commitSwap(lineId, type, id) {
   }, 'Swapped');
 }
 
-function moveLine(lineId, dir) {
-  const ids = recipeLines().map(l => String(l.LINE_ID));
-  const i = ids.indexOf(lineId);
-  const j = i + dir;
-  if (i < 0 || j < 0 || j >= ids.length || ids.some(x => !x)) return;
-  [ids[i], ids[j]] = [ids[j], ids[i]];
+/** Save a new order of lines (from dragging), writing SORT only where it changed. */
+function reorderLines(ids) {
+  if (ids.some(x => !x)) return;
   const current = new Map(recipeLines().map(l => [String(l.LINE_ID), l.SORT]));
   const changes = ids.map((id, k) => ({ id, record: { SORT: k + 1 } })).filter(ch => current.get(ch.id) !== ch.record.SORT);
-  run(() => store.updateMany('RECIPE_LINES', changes));
+  if (changes.length) run(() => store.updateMany('RECIPE_LINES', changes));
 }
 
 function removeLine(lineId) {
@@ -675,6 +884,7 @@ function onDetailClick(e) {
   const act = t.closest('[data-act]')?.dataset.act;
   const lineEl = t.closest('.line[data-line]');
   const lineId = lineEl?.dataset.line;
+  const stepEl = t.closest('.step[data-step]');
   const pick = t.closest('[data-pick-id]');
 
   if (pick) {
@@ -691,6 +901,7 @@ function onDetailClick(e) {
       ds.swap = null;
       ds.swapQ = '';
       renderLines();
+      dlg.querySelector('.line.open [data-edit-qty]')?.focus();
       break;
     case 'save-qty': saveQty(lineId); break;
     case 'open-item': openItem(lineId); break;
@@ -700,18 +911,22 @@ function onDetailClick(e) {
       renderLines();
       dlg.querySelector('[data-swap-q]')?.focus();
       break;
-    case 'up': moveLine(lineId, -1); break;
-    case 'down': moveLine(lineId, 1); break;
     case 'remove': removeLine(lineId); break;
     case 'add-clear': ds.add = emptyAdd(); renderLines(); dlg.querySelector('[data-add-q]')?.focus(); break;
     case 'add-commit': commitAdd(); break;
+    case 'quick-add': commitQuick(); break;
     case 'create-ing': {
       const swapping = !!t.closest('[data-swap]');
-      const q = swapping ? ds.swapQ : ds.add.q;
+      const q = swapping ? ds.swapQ : (quickParse(ds.add.q)?.name ?? ds.add.q);
       const targetLine = lineId;
       createIngredientFrom(q, id => (swapping ? commitSwap(targetLine, 'ING', id) : pickForAdd('ING', id)));
       break;
     }
+    case 'step-edit': ds.step = Number(stepEl.dataset.step); renderMethod(); break;
+    case 'step-cancel': ds.step = null; renderMethod(); break;
+    case 'step-save': saveStep(Number(stepEl.dataset.step), stepEl.querySelector('[data-step-text]').value); break;
+    case 'step-remove': saveStep(Number(stepEl.dataset.step), ''); break;
+    case 'step-add': addSteps(); break;
     case 'paste': openPaste(); break;
     case 'edit': openRecipeForm(store.byId('RECIPES', ds.id)); break;
     case 'delete': deleteRecipe(); break;
@@ -723,13 +938,17 @@ function onDetailInput(e) {
   const t = e.target;
   if (t.matches('[data-add-q]')) {
     ds.add.q = t.value;
-    t.closest('[data-addline]').querySelector('[data-results]').innerHTML = resultsHtml(ds.add.q);
+    t.closest('[data-addline]').querySelector('[data-results]').innerHTML = addResultsHtml();
   } else if (t.matches('[data-swap-q]')) {
     ds.swapQ = t.value;
     t.closest('[data-swap]').querySelector('[data-results]').innerHTML = resultsHtml(ds.swapQ);
   } else if (t.matches('[data-add-qty]')) {
     ds.add.qty = t.value;
     dlg.querySelector('[data-add-preview]').innerHTML = previewText();
+  } else if (t.matches('[data-edit-qty]')) {
+    updateEditProjection(t.closest('.line'));
+  } else if (t.matches('[data-step-new]')) {
+    ds.stepDraft = t.value;
   } else if (t.matches('[data-scale]')) {
     ds.scaleTo = t.value;
     renderLines();
@@ -740,18 +959,30 @@ function onDetailChange(e) {
   if (e.target.matches('[data-add-unit]')) {
     ds.add.unit = e.target.value;
     dlg.querySelector('[data-add-preview]').innerHTML = previewText();
+  } else if (e.target.matches('[data-edit-unit]')) {
+    updateEditProjection(e.target.closest('.line'));
   }
 }
 
 function onDetailKeydown(e) {
-  if (e.key !== 'Enter') return;
   const t = e.target;
+  if (e.key === 'Escape' && t.matches('[data-step-text]')) { e.preventDefault(); ds.step = null; renderMethod(); return; }
+  if (e.key !== 'Enter' || e.isComposing) return;
   if (t.matches('[data-add-qty]')) { e.preventDefault(); commitAdd(); } else if (t.matches('[data-edit-qty]')) {
     e.preventDefault();
     saveQty(t.closest('.line').dataset.line);
-  } else if (t.matches('[data-add-q], [data-swap-q]')) {
+  } else if (t.matches('[data-add-q]')) {
     e.preventDefault();
-    t.closest('[data-addline], [data-swap]').querySelector('[data-pick-id]')?.click();
+    if (!commitQuick()) t.closest('[data-addline]').querySelector('[data-pick-id]')?.click();
+  } else if (t.matches('[data-swap-q]')) {
+    e.preventDefault();
+    t.closest('[data-swap]').querySelector('[data-pick-id]')?.click();
+  } else if (t.matches('[data-step-new]') && !e.shiftKey) {
+    e.preventDefault();
+    addSteps();
+  } else if (t.matches('[data-step-text]') && !e.shiftKey) {
+    e.preventDefault();
+    saveStep(Number(t.closest('.step').dataset.step), t.value);
   }
 }
 
