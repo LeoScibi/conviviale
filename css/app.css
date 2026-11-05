@@ -217,6 +217,8 @@ input[type=checkbox] { accent-color: var(--olive); width: 20px; height: 20px; mi
 /* Whole card opens the editor; links inside stay tappable above it. */
 .card-hit { position: absolute; inset: 0; border: 0; background: none; border-radius: inherit; cursor: pointer; z-index: 0; }
 .card a, .card .card-actions { position: relative; z-index: 1; }
+/* A card-hit that is a link (stock counts) must stay a full-card cover, not shrink like the links above. */
+.card a.card-hit { position: absolute; z-index: 0; }
 .card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
 .card-name { font-weight: 600; font-size: 16px; line-height: 1.3; }
 .card-sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
