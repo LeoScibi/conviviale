@@ -5,7 +5,7 @@ import * as store from '../store.js';
 import { esc, money, formDialog, toast, byName } from '../ui.js';
 import { icons } from '../icons.js';
 import {
-  PACK_UNIT_OPTIONS, normalisePack, priceUnitCost, ingredientUnit, chosenPrice, pricesFor, formatUnitCost, packLabel,
+  PACK_UNIT_OPTIONS, PACK_WORDS, normalisePack, priceUnitCost, ingredientUnit, chosenPrice, pricesFor, formatUnitCost, packLabel,
   isWine, displayName,
 } from '../costing.js';
 import { normName } from '../recipe-paste.js';
@@ -32,7 +32,8 @@ export function priceTags(p) {
  */
 export function priceRowHtml(p, title) {
   const unitCostNow = priceUnitCost(p);
-  const sub = [p.SUPPLIER_CODE, packLabel(p.PACK_SIZE, p.PACK_UNIT), p.UPDATED ? `updated ${p.UPDATED}` : '']
+  const pack = [packLabel(p.PACK_SIZE, p.PACK_UNIT), String(p.PACK_NAME ?? '').trim()].filter(Boolean).join(' ');
+  const sub = [p.SUPPLIER_CODE, pack, p.UPDATED ? `updated ${p.UPDATED}` : '']
     .filter(Boolean).map(esc).join(' · ');
   return `
     <button type="button" class="price-row" data-price-id="${esc(p.PRICE_ID)}">
@@ -100,6 +101,9 @@ export function openPriceForm({ price = null, supplierId = null, ingId = null, o
     { name: 'PACK_SIZE', label: 'Pack size', type: 'number', required: true, min: 0.001, step: 'any', inputmode: 'decimal', half: true },
     { name: 'PACK_UNIT', label: 'Unit', type: 'select', required: true, options: PACK_UNIT_OPTIONS, half: true },
     { name: 'PACK_PRICE', label: 'Pack price £', type: 'number', required: true, min: 0, step: 0.01, inputmode: 'decimal', half: true, hint: 'Ex VAT' },
+    { name: 'PACK_NAME', label: 'Pack name', half: true, autocomplete: 'off', placeholder: 'bag, case, tin…',
+      suggestions: PACK_WORDS,
+      hint: 'Lets recipes count in packs (“1 bag”)' },
     { name: 'SUPPLIER_CODE', label: 'Product code', half: true, autocomplete: 'off' },
     { name: 'PRODUCT_NAME', label: 'Supplier’s description', wide: true, placeholder: 'Optional, as it appears on their list' },
     { name: 'INVOICE_REF', label: 'Invoice ref', wide: true, placeholder: 'Optional',
@@ -126,7 +130,10 @@ export function openPriceForm({ price = null, supplierId = null, ingId = null, o
         : `<strong>${formatUnitCost(c, unit)}</strong> as bought`;
     },
     onDelete: isNew ? null : async () => {
-      if (!confirm('Remove this price from the supplier’s list?')) return false;
+      const used = new Set(store.rows('RECIPE_LINES').filter(l => String(l.PRICE_ID) === String(price.PRICE_ID))
+        .map(l => store.byId('RECIPES', l.RECIPE_ID)?.NAME).filter(Boolean));
+      const warn = used.size ? `\n\n${[...used].join(', ')} ${used.size === 1 ? 'counts' : 'count'} in this pack and will need another unit.` : '';
+      if (!confirm(`Remove this price from the supplier’s list?${warn}`)) return false;
       await store.remove({ SUPPLIER_PRICES: [price.PRICE_ID] });
       toast('Price removed');
       onDeleted?.();
@@ -164,6 +171,7 @@ export function openPriceForm({ price = null, supplierId = null, ingId = null, o
       const priceChanged = isNew || Number(price.PACK_PRICE) !== d.PACK_PRICE || price.PACK_PRICE === '';
       const rec = {
         SUPPLIER_ID: supplier, ING_ID: target.ING_ID, SUPPLIER_CODE: d.SUPPLIER_CODE, PRODUCT_NAME: d.PRODUCT_NAME,
+        PACK_NAME: String(d.PACK_NAME ?? '').trim().toLowerCase(),
         PACK_SIZE: size, PACK_UNIT: unit, PACK_PRICE: d.PACK_PRICE,
         ...(priceChanged ? { UPDATED: store.today() } : {}),
       };

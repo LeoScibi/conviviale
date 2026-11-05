@@ -46,7 +46,7 @@ in `index.html` (one search-and-replace), and add any new `js/` module to the im
 | `js/auth.js` | Google Identity Services token client, domain check, session expiry |
 | `js/sheets.js` | Sheets API wrapper: schema setup, read tables by header, append, update row by ID |
 | `js/store.js` | In-memory cache, type coercion, ID generation (`SUP-0001`, `ING-0001`, `REC-0001`); reads INGREDIENTS and WINES as one list |
-| `js/costing.js` | Derived costs: price-list unit costs, preferred-else-cheapest price, yield |
+| `js/costing.js` | Derived costs: price-list unit costs, preferred-else-cheapest price, yield; supplier packs as recipe units |
 | `js/starter-ingredients.js` | Starter list of common wine-bar ingredients for the "Add many" screen |
 | `js/link-names.js` | Swaps names typed into the sheet's link columns (SUPPLIER_ID, ING_ID, RECIPE_ID…) for IDs on load |
 | `js/migrate.js` | One-off data migrations run on load (single-supplier prices → price lists, wines → WINES tab) |
@@ -143,6 +143,11 @@ full-screen forms. It can be added to the home screen and opens like an app.
 - A recipe line's ITEM_TYPE is `ING` or `SUB`. Sub-recipes can be used by weight/volume (needs a
   batch yield) or by `portion` (needs PORTIONS). A sub-recipe that would loop back into the
   recipe can't be added.
+- A recipe line can count in whole supplier packs ("1 bag spinach", "½ bottle prosecco"). Give the
+  price-list row a PACK_NAME (bag, case, tin…; a wine's unnamed pack is a "bottle"), then pick it from
+  the line's unit list or write it in a pasted recipe. The line stores the pack name in UNIT and the
+  price row in PRICE_ID, and costs at that pack's own price as bought (yield doesn't apply). A line
+  typed into the sheet as `2 | bag` with no PRICE_ID finds the pack by name.
 - On a wine menu a bottle's price is worked out from its cost (ex VAT): over £20 it is cost + £50,
   then + 20% VAT; at £20 or under it is priced to 70% GP, then + 20% VAT (`WINE_PRICING` in
   `js/config.js`). Glasses are priced to 70% GP. The worked-out bottle price is filled in when a

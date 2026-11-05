@@ -88,7 +88,9 @@ function build(menuId, coster = createCoster()) {
         continue;
       }
       const fam = ingredientFamily(lc.item);
-      const base = fam ? toBase(fam, l.QTY, l.UNIT) : null;
+      // A line in whole packs is as bought; the shopping list works in usable amounts.
+      const base = lc.pack ? (Number(l.QTY) || 0) * Number(lc.pack.PACK_SIZE) * (yieldFraction(lc.item) || 1)
+        : fam ? toBase(fam, l.QTY, l.UNIT) : null;
       if (base == null) { problems.add(`${c.rec.NAME}: ${lc.item.NAME} is in a unit that doesn't fit how it's measured`); continue; }
       const id = String(lc.item.ING_ID);
       need.set(id, (need.get(id) || 0) + base * factor);

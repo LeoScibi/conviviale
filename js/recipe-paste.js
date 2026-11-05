@@ -156,7 +156,10 @@ function parseQtyUnit(raw) {
   const found = leading || extractEmbedded(s) || { qty: null, cook: null, unitRaw: '', name: s };
   const name = cleanName(found.name.replace(/^of\s+/i, ''));
   const base = metric?.cook ? metric : found;
-  return { qty: base.qty, cook: base.cook, unitRaw: base.unitRaw, name, leadingQty: !!leading };
+  // The word after the number ("1 bag spinach" → bag), in case it names one of the
+  // ingredient's supplier packs.
+  const word = (found.unitRaw || found.name.trim().split(/\s+/)[0] || '').toLowerCase();
+  return { qty: base.qty, cook: base.cook, unitRaw: base.unitRaw, name, leadingQty: !!leading, word, count: found.qty };
 }
 
 function looksLikeIngredient(p, raw) {
@@ -173,7 +176,9 @@ const LIQUID_SWAP = { g: ['volume', 'ml', 1], kg: ['volume', 'L', 1], ml: ['weig
 
 /**
  * One row per pasted line:
- * { raw, name, ingId (null = create new), family, unit, qty, include, note }
+ * { raw, name, ingId (null = create new), family, unit, qty, include, note, word, count }
+ * `word` and `count` are the word after the number and the number as typed ("2 bag" → bag, 2),
+ * so a caller can count the line in one of the ingredient's packs.
  */
 export function parseRecipeText(text, ingredients) {
   return text.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(raw => {
@@ -201,6 +206,7 @@ export function parseRecipeText(text, ingredients) {
       raw, name: p.name || raw, note,
       ingId: match ? match.ING_ID : null,
       family, unit, qty,
+      word: p.word, count: p.count,
       include: looksLikeIngredient(p, raw),
     };
   });

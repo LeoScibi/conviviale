@@ -3,7 +3,7 @@
 
 import * as store from './store.js';
 import { RECIPE_DEFAULTS } from './config.js';
-import { usableUnitCost, ingredientFamily } from './costing.js';
+import { usableUnitCost, ingredientFamily, linePack, packName } from './costing.js';
 import { splitList } from './ui.js';
 import { BASE, familyOf, toBase, normUnit } from './units.js';
 
@@ -46,7 +46,7 @@ export function createCoster() {
     const id = String(l.ITEM_ID);
     const unit = normUnit(l.UNIT);
     const qty = Number(l.QTY) || 0;
-    const out = { line: l, type, cost: 0, rate: null, rateUnit: '', problem: null, allergens: [], item: null, family: null };
+    const out = { line: l, type, cost: 0, rate: null, rateUnit: '', problem: null, allergens: [], item: null, family: null, pack: null, packName: '' };
 
     if (type === 'SUB') {
       const sub = recs.get(id);
@@ -76,6 +76,19 @@ export function createCoster() {
     if (!ing) return { ...out, problem: 'missing' };
     out.allergens = splitList(ing.ALLERGENS);
     out.family = ingredientFamily(ing);
+    const lp = linePack(l, ing);
+    if (lp) {
+      // Counted in whole packs: costs at that pack's own price, as bought.
+      if (!lp.pack) return { ...out, problem: 'pack' };
+      out.pack = lp.pack;
+      out.packName = packName(lp.pack, ing);
+      const price = Number(lp.pack.PACK_PRICE);
+      if (lp.pack.PACK_PRICE === '' || lp.pack.PACK_PRICE == null || !(price >= 0)) return { ...out, problem: 'unpriced' };
+      out.cost = qty * price;
+      out.rate = price;
+      out.rateUnit = 'pack';
+      return out;
+    }
     const c = usableUnitCost(ing);
     if (c == null || !out.family) return { ...out, problem: 'unpriced' };
     const base = toBase(out.family, qty, unit);
@@ -105,7 +118,7 @@ export function createCoster() {
       perPortion: total / portions,
       perBase: yieldBase > 0 ? total / yieldBase : null,
       allergens: [...allergens].sort((a, b) => a.localeCompare(b)),
-      unpriced: lines.filter(l => ['unpriced', 'partial', 'missing', 'unit'].includes(l.problem)).length,
+      unpriced: lines.filter(l => ['unpriced', 'partial', 'missing', 'unit', 'pack'].includes(l.problem)).length,
       circular: lines.some(l => l.problem === 'circular'),
       // GP means nothing until there is something to cost.
       ...(lines.length ? pricing(rec, total / portions) : { ...pricing(rec, 0), gp: null, gpPct: null, onTarget: null }),
@@ -124,7 +137,7 @@ export function createCoster() {
       String(l.ITEM_TYPE).toUpperCase() === 'SUB' && wouldLoop(recipeId, l.ITEM_ID, seen));
   }
 
-  return { cost, wouldLoop, ings, recs, linesOf: id => linesBy.get(String(id)) || [] };
+  return { cost, line: lineCost, wouldLoop, ings, recs, linesOf: id => linesBy.get(String(id)) || [] };
 }
 
 /** Sell-side figures for one portion. All money inc/ex VAT as labelled. */

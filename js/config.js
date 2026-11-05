@@ -48,12 +48,13 @@ export const SCHEMA = {
     booleans: ['ACTIVE'],
   },
   // A supplier's price list: one row per supplier + ingredient + pack. PACK_UNIT is stored as
-  // g / ml / each; UPDATED is the date the price was last set.
+  // g / ml / each; UPDATED is the date the price was last set. PACK_NAME (bag, case, tin…) is
+  // optional and lets a recipe count in whole packs ("1 bag spinach").
   SUPPLIER_PRICES: {
     idField: 'PRICE_ID',
     idPrefix: 'SP',
     headers: ['PRICE_ID', 'SUPPLIER_ID', 'ING_ID', 'SUPPLIER_CODE', 'PRODUCT_NAME', 'PACK_SIZE', 'PACK_UNIT',
-      'PACK_PRICE', 'UPDATED'],
+      'PACK_PRICE', 'UPDATED', 'PACK_NAME'],
     numbers: ['PACK_SIZE', 'PACK_PRICE'],
   },
   PRICE_HISTORY: {
@@ -68,10 +69,11 @@ export const SCHEMA = {
     numbers: ['YIELD_QTY', 'PORTIONS', 'SELL_PRICE', 'VAT_RATE', 'TARGET_GP%'],
   },
   // LINE_ID and SORT let a single line be edited, reordered or removed in place.
+  // A line counted in packs ("1 bag") has the pack name as UNIT and the price row in PRICE_ID.
   RECIPE_LINES: {
     idField: 'LINE_ID',
     idPrefix: 'RL',
-    headers: ['RECIPE_ID', 'ITEM_TYPE', 'ITEM_ID', 'QTY', 'UNIT', 'LINE_ID', 'SORT'],
+    headers: ['RECIPE_ID', 'ITEM_TYPE', 'ITEM_ID', 'QTY', 'UNIT', 'LINE_ID', 'SORT', 'PRICE_ID'],
     numbers: ['QTY', 'SORT'],
   },
   // A menu is a named list of recipes and how much of each an event or service needs. UNIT is

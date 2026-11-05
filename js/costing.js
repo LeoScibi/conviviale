@@ -117,3 +117,80 @@ export function packLabel(size, unit) {
   if (unit === 'ml' && n >= 1000) return `${+(n / 1000).toFixed(3)} L`;
   return `${+n.toFixed(3)} ${unit}`;
 }
+
+// ---------- packs as recipe units ("1 bag spinach", "1 bottle prosecco")
+//
+// A recipe line can count in whole packs from a price list instead of g / ml / each. The line
+// keeps the pack's name in UNIT (readable in the sheet) and its price row in PRICE_ID. It costs
+// at that pack's own price, as bought: a whole bag is used, so yield doesn't apply.
+
+const PACK_PREFIX = 'pack:';
+
+/** Common pack names, offered when naming a pack and recognised in pasted recipes. */
+export const PACK_WORDS = ['bag', 'bottle', 'box', 'bunch', 'case', 'jar', 'keg', 'packet', 'punnet', 'tin', 'tray', 'tub'];
+
+/** What a pack is called: its PACK_NAME, else "bottle" for a wine, else "pack". */
+export function packName(p, ing) {
+  const n = String(p?.PACK_NAME ?? '').trim().toLowerCase();
+  if (n) return n;
+  return isWine(ing) && p?.PACK_UNIT === 'ml' ? 'bottle' : 'pack';
+}
+
+/** "bag" → "bags", "box" → "boxes" for more than one; ½ or 1 stays singular. */
+export function plural(word, n) {
+  if (!(Number(n) > 1) || !/[a-z]$/i.test(word) || /s$/i.test(word)) return word;
+  return /(x|ch|sh)$/i.test(word) ? `${word}es` : `${word}s`;
+}
+
+const sameWord = (a, b) => {
+  const f = w => String(w ?? '').trim().toLowerCase().replace(/(es|s)$/, '');
+  return f(a) !== '' && f(a) === f(b);
+};
+
+/** Price rows an ingredient can be counted in: a size in the same measure as the ingredient. */
+export function packsFor(ing) {
+  const fam = ingredientFamily(ing);
+  return pricesFor(ing?.ING_ID)
+    .filter(p => Number(p.PACK_SIZE) > 0 && familyOf(p.PACK_UNIT) && (!fam || familyOf(p.PACK_UNIT) === fam))
+    .sort((a, b) => Number(a.PACK_SIZE) - Number(b.PACK_SIZE));
+}
+
+/** The pack whose name is `word` ("bag", "bags"), preferring the price recipes already use. */
+export function packNamed(ing, word) {
+  const hits = packsFor(ing).filter(p => sameWord(packName(p, ing), word));
+  if (!hits.length) return null;
+  const chosen = chosenPrice(ing)?.price;
+  return hits.find(p => p === chosen) || hits[0];
+}
+
+/**
+ * The pack a recipe line counts in, or null if it's in g / ml / each.
+ * Returns { pack } when found, or { pack: null } when the line names a pack that's gone.
+ */
+export function linePack(line, ing) {
+  const id = String(line?.PRICE_ID ?? '').trim();
+  const unit = normUnit(line?.UNIT);
+  if (!id && (familyOf(unit) || unit === 'tsp' || unit === 'tbsp' || unit === 'portion' || !unit)) return null;
+  const packs = packsFor(ing);
+  const byId = id ? packs.find(p => String(p.PRICE_ID) === id) : null;
+  // A line typed into the sheet as "1 | bag" (no PRICE_ID) finds its pack by name.
+  return { pack: byId || (unit && !familyOf(unit) ? packNamed(ing, unit) : null) };
+}
+
+/** Value used by unit dropdowns for a pack, and back again. */
+export const packValue = p => PACK_PREFIX + p.PRICE_ID;
+export const isPackValue = v => String(v ?? '').startsWith(PACK_PREFIX);
+
+/** Turn a unit dropdown value into the UNIT and PRICE_ID to store on a recipe line. */
+export function lineUnitFields(value, ing) {
+  if (!isPackValue(value)) return { UNIT: value, PRICE_ID: '' };
+  const id = String(value).slice(PACK_PREFIX.length);
+  const p = packsFor(ing).find(x => String(x.PRICE_ID) === id);
+  return { UNIT: p ? packName(p, ing) : 'pack', PRICE_ID: id };
+}
+
+/** "bag (250 g, £1.40)" for a dropdown option. */
+export function packOptionLabel(p, ing) {
+  const price = p.PACK_PRICE === '' || p.PACK_PRICE == null ? 'no price' : money(p.PACK_PRICE);
+  return `${packName(p, ing)} (${packLabel(p.PACK_SIZE, p.PACK_UNIT)}, ${price})`;
+}

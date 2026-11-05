@@ -7,7 +7,10 @@ import '../item-search.js';
 import { RECIPE_TYPES, RECIPE_DEFAULTS } from '../config.js';
 import { icons } from '../icons.js';
 import { esc, money, formDialog, toast, reportError, byName, sameName, matches, parkToasts } from '../ui.js';
-import { formatUnitCost, usableUnitCost, chosenPrice, displayName } from '../costing.js';
+import {
+  formatUnitCost, usableUnitCost, chosenPrice, displayName, packsFor, packValue, packOptionLabel, lineUnitFields, linePack, packNamed,
+  packLabel, plural, isPackValue, PACK_WORDS,
+} from '../costing.js';
 import { createCoster, ingredientFamily, isSub } from '../recipe-cost.js';
 import { BASE, unitsFor, unitLabel, fmtQty, normUnit, familyOf, toBase } from '../units.js';
 import { parseRecipeText, normName } from '../recipe-paste.js';
@@ -348,6 +351,10 @@ function renderDetail() {
   renderLines(coster);
 }
 
+/**
+ * Unit dropdown for a line. `current` is a unit ("g") or a pack value ("pack:SP-0003").
+ * Ingredients also offer each of their supplier packs ("bag (250 g, £1.40)").
+ */
 function lineUnitOptions(lc, current) {
   let units;
   if (lc.type === 'SUB') {
@@ -356,25 +363,40 @@ function lineUnitOptions(lc, current) {
   } else {
     units = lc.family ? unitsFor(lc.family) : ALL_UNITS;
   }
-  const cur = normUnit(current);
-  if (cur && !units.includes(cur)) units = [cur, ...units];
-  return units.map(u => `<option value="${esc(u)}"${u === cur ? ' selected' : ''}>${esc(u === 'portion' ? 'portion' : unitLabel(lc.family, u))}</option>`).join('');
+  const packs = lc.type === 'SUB' || !lc.item ? [] : packsFor(lc.item);
+  const isPack = packs.some(p => packValue(p) === current);
+  const cur = isPack ? current : normUnit(current);
+  if (cur && !isPack && !units.includes(cur)) units = [cur, ...units];
+  const plain = units.map(u => `<option value="${esc(u)}"${u === cur ? ' selected' : ''}>${esc(u === 'portion' ? 'portion' : unitLabel(lc.family, u))}</option>`).join('');
+  if (!packs.length) return plain;
+  return `${plain}<optgroup label="Whole packs">${packs.map(p =>
+    `<option value="${esc(packValue(p))}"${packValue(p) === cur ? ' selected' : ''}>${esc(packOptionLabel(p, lc.item))}</option>`).join('')}</optgroup>`;
 }
 
-const PROBLEM = { unpriced: 'No price', missing: 'Missing', unit: 'Unit mismatch', circular: 'Loops back' };
+/** The dropdown value for a stored line: its pack, or its plain unit. */
+function lineUnitValue(line, ing) {
+  const lp = ing ? linePack(line, ing) : null;
+  return lp?.pack ? packValue(lp.pack) : normUnit(line.UNIT);
+}
+
+const PROBLEM = { unpriced: 'No price', missing: 'Missing', unit: 'Unit mismatch', circular: 'Loops back', pack: 'Pack gone' };
 
 function lineHtml(lc, factor, supplierNames) {
   const l = lc.line;
   const id = l.LINE_ID ? String(l.LINE_ID) : '';
   const open = id && ds.open === id;
   const name = lc.item ? lc.item.NAME : `${l.ITEM_ID} (deleted)`;
+  const supplierId = lc.pack ? lc.pack.SUPPLIER_ID : chosenPrice(lc.item)?.price.SUPPLIER_ID;
   const kind = lc.type === 'SUB' ? 'Sub-recipe'
-    : lc.item ? (supplierNames.get(String(chosenPrice(lc.item)?.price.SUPPLIER_ID)) || 'No supplier price') + (lc.item.ACTIVE ? '' : ' · inactive') : 'Ingredient';
+    : lc.item ? [supplierNames.get(String(supplierId)) || 'No supplier price',
+      lc.pack ? `${packLabel(lc.pack.PACK_SIZE, lc.pack.PACK_UNIT)} ${lc.packName}` : '',
+      lc.item.ACTIVE ? '' : 'inactive'].filter(Boolean).join(' · ') : 'Ingredient';
   const qty = Number(l.QTY) * factor;
-  const unit = normUnit(l.UNIT);
-  const qtyText = `${fmtQty(qty)} ${unit === 'portion' && qty !== 1 ? 'portions' : unit}`;
+  const unit = lc.pack ? lc.packName : normUnit(l.UNIT);
+  const qtyText = `${fmtQty(qty)} ${unit === 'portion' ? plural('portion', qty) : lc.pack ? plural(unit, qty) : unit}`;
   const hardProblem = PROBLEM[lc.problem];
-  const rate = lc.rate == null ? '' : lc.rateUnit === 'portion' ? `${money(lc.rate)}/portion` : formatUnitCost(lc.rate, lc.rateUnit);
+  const rate = lc.rate == null ? '' : lc.rateUnit === 'portion' ? `${money(lc.rate)}/portion`
+    : lc.rateUnit === 'pack' ? `${money(lc.rate)}/${lc.packName}` : formatUnitCost(lc.rate, lc.rateUnit);
   return `
     <div class="line${lc.problem ? ' flag' : ''}${open ? ' open' : ''}" data-line="${esc(id)}">
       <button type="button" class="line-main" data-act="toggle" ${id ? '' : 'disabled title="This line was added in the sheet without a LINE_ID, so it can only be edited there."'} aria-expanded="${open ? 'true' : 'false'}">
@@ -396,12 +418,13 @@ function lineEditorHtml(lc, factor) {
     <div class="line-edit">
       <div class="qty-row">
         <input type="number" inputmode="decimal" min="0" step="any" data-edit-qty value="${esc(l.QTY)}" aria-label="Quantity">
-        <select data-edit-unit aria-label="Unit">${lineUnitOptions(lc, l.UNIT)}</select>
+        <select data-edit-unit aria-label="Unit">${lineUnitOptions(lc, lineUnitValue(l, lc.item))}</select>
         <button type="button" class="btn primary sm" data-act="save-qty">Save</button>
       </div>
       ${factor !== 1 ? '<p class="hint">You’re editing the base recipe, not the scaled amounts.</p>' : ''}
       ${lc.problem === 'unpriced' ? '<p class="hint">This ingredient has no price yet. Tap Open to add one.</p>' : ''}
       ${lc.problem === 'unit' ? '<p class="hint">This unit doesn’t match how the item is measured. Pick another unit.</p>' : ''}
+      ${lc.problem === 'pack' ? `<p class="hint">This line counts in “${esc(l.UNIT)}”, but ${esc(lc.item?.NAME)} has no supplier pack by that name any more. Pick another unit.</p>` : ''}
       <div class="line-actions">
         ${lc.item ? `<button type="button" class="btn sm" data-act="open-item">Open</button>` : ''}
         <button type="button" class="btn sm" data-act="swap">${swapping ? 'Cancel swap' : 'Swap'}</button>
@@ -487,6 +510,7 @@ function addLineHtml(coster) {
   const item = a.pick.type === 'SUB' ? store.byId('RECIPES', a.pick.id) : store.byId('INGREDIENTS', a.pick.id);
   const lc = {
     type: a.pick.type,
+    item,
     family: a.pick.type === 'SUB' ? coster.cost(a.pick.id).family : ingredientFamily(item),
   };
   return `
@@ -508,25 +532,11 @@ function addLineHtml(coster) {
 function previewText() {
   const a = ds.add;
   if (!a.pick || !(Number(a.qty) > 0)) return 'Enter a quantity to see the cost.';
-  const coster = createCoster();
-  const line = { ITEM_TYPE: a.pick.type, ITEM_ID: a.pick.id, QTY: a.qty, UNIT: a.unit, SORT: '', _row: 0 };
-  let cost = null;
-  if (a.pick.type === 'SUB') {
-    const sc = coster.cost(a.pick.id);
-    if (normUnit(a.unit) === 'portion') cost = Number(a.qty) * sc.perPortion;
-    else {
-      const b = sc.family ? toBase(sc.family, line.QTY, line.UNIT) : null;
-      if (b != null && sc.yieldBase) cost = (b / sc.yieldBase) * sc.total;
-    }
-  } else {
-    const ing = store.byId('INGREDIENTS', a.pick.id);
-    const fam = ingredientFamily(ing);
-    const c = usableUnitCost(ing);
-    const b = fam ? toBase(fam, line.QTY, line.UNIT) : null;
-    if (c == null) return 'This ingredient has no price yet, so it will cost as £0 until you add one.';
-    if (b != null) cost = b * c;
-  }
-  return cost == null ? 'That unit doesn’t fit this item.' : `Line cost <b>${money(cost)}</b>`;
+  const ing = a.pick.type === 'SUB' ? null : store.byId('INGREDIENTS', a.pick.id);
+  const lc = createCoster().line({ ITEM_TYPE: a.pick.type, ITEM_ID: a.pick.id, QTY: a.qty, ...lineUnitFields(a.unit, ing), SORT: '', _row: 0 });
+  if (lc.problem === 'unpriced') return 'This ingredient has no price yet, so it will cost as £0 until you add one.';
+  if (lc.problem === 'unit' || lc.problem === 'pack') return 'That unit doesn’t fit this item.';
+  return `Line cost <b>${money(lc.cost)}</b>`;
 }
 
 // ---------- actions
@@ -564,8 +574,9 @@ function commitAdd() {
   const sort = lines.reduce((m, l) => Math.max(m, Number(l.SORT) || 0), 0) + 1;
   const name = (a.pick.type === 'SUB' ? store.byId('RECIPES', a.pick.id) : store.byId('INGREDIENTS', a.pick.id))?.NAME;
   return run(async () => {
+    const ing = a.pick.type === 'SUB' ? null : store.byId('INGREDIENTS', a.pick.id);
     await store.create('RECIPE_LINES', {
-      RECIPE_ID: ds.id, ITEM_TYPE: a.pick.type, ITEM_ID: a.pick.id, QTY: qty, UNIT: a.unit, SORT: sort,
+      RECIPE_ID: ds.id, ITEM_TYPE: a.pick.type, ITEM_ID: a.pick.id, QTY: qty, ...lineUnitFields(a.unit, ing), SORT: sort,
     });
     ds.add = emptyAdd();
   }, `Added ${name}`).then(() => dlg.querySelector('[data-add-q]')?.focus({ preventScroll: true }));
@@ -576,8 +587,10 @@ function saveQty(lineId) {
   const qty = Number(row.querySelector('[data-edit-qty]').value);
   const unit = row.querySelector('[data-edit-unit]').value;
   if (!(qty > 0)) { toast('Enter a quantity greater than zero.', 'error'); return; }
+  const line = store.byId('RECIPE_LINES', lineId);
+  const ing = String(line.ITEM_TYPE).toUpperCase() === 'SUB' ? null : store.byId('INGREDIENTS', line.ITEM_ID);
   run(async () => {
-    await store.update('RECIPE_LINES', lineId, { QTY: qty, UNIT: unit });
+    await store.update('RECIPE_LINES', lineId, { QTY: qty, ...lineUnitFields(unit, ing) });
     ds.open = null;
   }, 'Quantity updated');
 }
@@ -587,8 +600,16 @@ function commitSwap(lineId, type, id) {
   const fam = type === 'SUB' ? familyOf(store.byId('RECIPES', id)?.YIELD_UNIT) : ingredientFamily(store.byId('INGREDIENTS', id));
   const cur = normUnit(line.UNIT);
   const keep = (fam && toBase(fam, 1, cur) != null) || (type === 'SUB' && cur === 'portion');
+  // A line in packs ("1 bag") keeps counting in packs if the new item has one by that name,
+  // and otherwise becomes the pack's weight or volume ("250 g").
+  const oldPack = String(line.ITEM_TYPE).toUpperCase() === 'ING' ? linePack(line, store.byId('INGREDIENTS', line.ITEM_ID))?.pack : null;
+  const pack = type === 'ING' && !keep ? packNamed(store.byId('INGREDIENTS', id), cur) : null;
+  const asMeasure = !pack && oldPack && fam && familyOf(oldPack.PACK_UNIT) === fam
+    ? { QTY: Number(line.QTY) * Number(oldPack.PACK_SIZE), UNIT: oldPack.PACK_UNIT, PRICE_ID: '' } : null;
+  const unit = pack ? { UNIT: cur, PRICE_ID: pack.PRICE_ID }
+    : asMeasure || { UNIT: keep ? cur : defaultUnit(type, id), PRICE_ID: '' };
   run(async () => {
-    await store.update('RECIPE_LINES', lineId, { ITEM_TYPE: type, ITEM_ID: id, UNIT: keep ? cur : defaultUnit(type, id) });
+    await store.update('RECIPE_LINES', lineId, { ITEM_TYPE: type, ITEM_ID: id, ...unit });
     ds.swap = null;
     ds.swapQ = '';
   }, 'Swapped');
@@ -769,7 +790,7 @@ function ensurePasteDialog() {
     if (act === 'close') { if (confirmDiscardPaste()) pasteDlg.close(); } else if (act === 'parse') {
       const text = pasteDlg.querySelector('[data-paste-text]').value;
       if (!text.trim()) { toast('Paste an ingredient list first.', 'error'); return; }
-      parsed = parseRecipeText(text, store.rows('INGREDIENTS').filter(i => i.ACTIVE));
+      parsed = parseText(text);
       renderPasteRows();
     } else if (act === 'paste-add') addParsed();
   });
@@ -787,25 +808,42 @@ function openPaste(text = '') {
   ensurePasteDialog();
   parsed = [];
   pasteDlg.querySelector('[data-paste-text]').value = text;
-  if (text) parsed = parseRecipeText(text, store.rows('INGREDIENTS').filter(i => i.ACTIVE));
+  if (text) parsed = parseText(text);
   renderPasteRows();
   pasteDlg.showModal();
   parkToasts();
   if (!text) pasteDlg.querySelector('[data-paste-text]').focus();
 }
 
+function parseText(text) {
+  return parseRecipeText(text, store.rows('INGREDIENTS').filter(i => i.ACTIVE)).map(p => (usePackIfNamed(p), p));
+}
+
+/** "2 bag spinach": if the ingredient has a pack called "bag", count the line in that pack. */
+function usePackIfNamed(p) {
+  const ing = p.ingId ? store.byId('INGREDIENTS', p.ingId) : null;
+  const pack = ing && Number(p.count) > 0 ? packNamed(ing, p.word) : null;
+  if (!pack) {
+    const word = String(p.word).replace(/(es|s)$/, '');
+    if (ing && PACK_WORDS.includes(word)) {
+      p.note = `${ing.NAME} has no supplier pack called “${word}”. Name one on its price list, or set the quantity here.`;
+    }
+    return false;
+  }
+  Object.assign(p, { unit: packValue(pack), qty: Number(p.count), note: '' });
+  return true;
+}
+
 function pasteRowCost(p) {
   if (!p.ingId || !(Number(p.qty) > 0)) return '';
   const ing = store.byId('INGREDIENTS', p.ingId);
-  const c = usableUnitCost(ing);
-  const b = toBase(p.family, p.qty, p.unit);
-  if (c == null) return 'No price';
-  return b == null ? 'Unit?' : money(b * c);
+  const lc = createCoster().line({ ITEM_TYPE: 'ING', ITEM_ID: p.ingId, QTY: p.qty, ...lineUnitFields(p.unit, ing), SORT: '', _row: 0 });
+  if (lc.problem === 'unpriced') return 'No price';
+  return lc.problem ? 'Unit?' : money(lc.cost);
 }
 
 function pasteRowHtml(p, i) {
   const ing = p.ingId ? store.byId('INGREDIENTS', p.ingId) : null;
-  const units = ing ? unitsFor(p.family) : ALL_UNITS;
   return `
     <div class="paste-row${p.include ? '' : ' off'}" data-i="${i}">
       <label class="paste-include"><input type="checkbox" data-p="include"${p.include ? ' checked' : ''}><span>${esc(p.raw)}</span></label>
@@ -814,7 +852,8 @@ function pasteRowHtml(p, i) {
       <small class="${ing ? 'match-ok' : 'match-new'}">${ing ? '✓ Matches an ingredient' : '+ New ingredient (needs a price)'}</small>
       <div class="qty-row">
         <input type="number" inputmode="decimal" min="0" step="any" data-p="qty" value="${p.qty ?? ''}" placeholder="Qty" aria-label="Quantity">
-        <select data-p="unit" aria-label="Unit">${units.map(u => `<option value="${u}"${u === p.unit ? ' selected' : ''}>${esc(unitLabel(p.family, u))}</option>`).join('')}</select>
+        <select data-p="unit" aria-label="Unit">${ing ? lineUnitOptions({ type: 'ING', item: ing, family: p.family }, p.unit)
+          : ALL_UNITS.map(u => `<option value="${u}"${u === p.unit ? ' selected' : ''}>${esc(unitLabel(p.family, u))}</option>`).join('')}</select>
         <span class="paste-cost" data-p-cost>${pasteRowCost(p)}</span>
       </div>
     </div>`;
@@ -857,10 +896,11 @@ function onPasteEdit(e) {
       p.ingId = exact.ING_ID;
       p.name = exact.NAME;
       p.family = ingredientFamily(exact) || p.family;
-      if (toBase(p.family, 1, p.unit) == null) p.unit = BASE[p.family];
+      if (toBase(p.family, 1, p.unit) == null && !usePackIfNamed(p)) p.unit = BASE[p.family];
     } else {
       p.ingId = null;
       p.name = typed || p.name;
+      if (isPackValue(p.unit)) p.unit = BASE[p.family] || 'g';
     }
   }
   renderPasteRows();
@@ -888,7 +928,7 @@ async function addParsed() {
     let sort = recipeLines().reduce((m, l) => Math.max(m, Number(l.SORT) || 0), 0);
     await store.createMany('RECIPE_LINES', rows.map(p => ({
       RECIPE_ID: ds.id, ITEM_TYPE: 'ING', ITEM_ID: p.ingId || fresh.get(normName(p.name)).id,
-      QTY: Number(p.qty), UNIT: p.unit, SORT: ++sort,
+      QTY: Number(p.qty), ...lineUnitFields(p.unit, p.ingId ? store.byId('INGREDIENTS', p.ingId) : null), SORT: ++sort,
     })));
     parsed = [];
     pasteDlg.close();
