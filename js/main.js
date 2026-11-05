@@ -195,4 +195,31 @@ async function boot() {
   else showSignin();
 }
 
+// ============================================================ updates for the installed app
+// Installed on a phone, the app is rarely closed: switching back to it resumes the old page and
+// there is no reload button, so a new release would never arrive. Whenever the app comes back on
+// screen (and every 15 minutes while open) it asks GitHub for index.html and compares the release
+// version. If there's a new one it reloads straight away, unless a form or the scanner is open;
+// then it offers an Update button instead. The sign-in and unsent stock counts survive a reload.
+
+const RUNNING_VERSION = new URL(document.querySelector('script[src*="js/main.js"]').src).searchParams.get('v');
+
+async function checkForUpdate() {
+  if (document.visibilityState !== 'visible' || navigator.onLine === false) return;
+  let latest;
+  try {
+    const res = await fetch(`./index.html?check=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) return;
+    latest = (await res.text()).match(/js\/main\.js\?v=([^"'&]+)/)?.[1];
+  } catch {
+    return; // no signal: try again next time
+  }
+  if (!latest || latest === RUNNING_VERSION) return;
+  if (!document.querySelector('dialog[open]')) { location.reload(); return; }
+  toast('A new version of the app is ready.', 'ok', { label: 'Update', onClick: () => location.reload() });
+}
+
+document.addEventListener('visibilitychange', checkForUpdate);
+setInterval(checkForUpdate, 15 * 60 * 1000);
+
 boot();
