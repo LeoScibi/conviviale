@@ -200,14 +200,20 @@ export function openForm(wine, { onSaved } = {}) {
 
   // The photo is only written when the form is saved; `undefined` means it hasn't been touched.
   let newPhoto;
-  // The thumbnail is the button: tap it to take or choose a picture.
-  const photoHtml = src => `
-    <label class="wine-thumb lg photo-pick" title="${src ? 'Change photo' : 'Add photo'}">
+  // The thumbnail is the button: tap it to take or choose a picture. With a photo, nothing is
+  // laid over it, so the whole bottle shows; Change and Remove sit underneath.
+  const photoHtml = src => src ? `
+    <label class="wine-thumb lg photo-pick" title="Change photo">
       <input type="file" accept="image/*" data-photo-file hidden>
-      ${src ? `<img src="${src}" alt="Photo of this wine">` : icons.glass}
-      <span>${src ? 'Change' : 'Add photo'}</span>
+      <img src="${src}" alt="Photo of this wine">
     </label>
-    ${src ? '<button type="button" class="btn sm" data-photo-remove>Remove</button>' : ''}`;
+    <label class="btn sm photo-change">Change<input type="file" accept="image/*" data-photo-file hidden></label>
+    <button type="button" class="btn sm" data-photo-remove>Remove</button>` : `
+    <label class="wine-thumb lg photo-pick" title="Add photo">
+      <input type="file" accept="image/*" data-photo-file hidden>
+      ${icons.glass}
+      <span>Add photo</span>
+    </label>`;
   const writePhoto = async (id, name) => {
     if (newPhoto === undefined) return;
     try {
