@@ -108,6 +108,26 @@ export const SCHEMA = {
     idPrefix: 'PH',
     headers: ['PHOTO_ID', 'ING_ID', 'IMAGE', 'UPDATED'],
   },
+  // A stock count of the wines: STATUS is `open` while it's being counted, then `done`.
+  STOCK_COUNTS: {
+    idField: 'COUNT_ID',
+    idPrefix: 'SC',
+    headers: ['COUNT_ID', 'NAME', 'DATE', 'STATUS', 'NOTES'],
+  },
+  // One row per wine counted: QTY is in bottles. Counting a wine again replaces its row's QTY.
+  STOCK_COUNT_LINES: {
+    idField: 'LINE_ID',
+    idPrefix: 'SCL',
+    headers: ['LINE_ID', 'COUNT_ID', 'ING_ID', 'QTY', 'UPDATED', 'COUNTED_BY'],
+    numbers: ['QTY'],
+  },
+  // Label scans someone confirmed, so label recognition gets better for everyone. VECTOR is the
+  // label's fingerprint (written by the app, see js/label-match.js); MODEL says which reader made it.
+  LABEL_SCANS: {
+    idField: 'SCAN_ID',
+    idPrefix: 'LS',
+    headers: ['SCAN_ID', 'ING_ID', 'MODEL', 'VECTOR', 'ADDED'],
+  },
 };
 
 export const RECIPE_TYPES = [['dish', 'Dish'], ['drink', 'Drink'], ['sub', 'Sub-recipe']];

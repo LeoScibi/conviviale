@@ -59,10 +59,12 @@ in `index.html` (one search-and-replace), and add any new `js/` module to the im
 | `js/price-impact.js` | `withImpact()`: wraps a supplier-price write and then shows which recipes and wine serves it moved, flagging any now below target |
 | `js/sortable.js` | Drag-to-reorder by a grip (mouse, touch, or ↑ / ↓ on a focused grip), used for recipe lines and method steps |
 | `js/photos.js` | Wine photos: shrinks a picture to a small JPEG and keeps it as text in the PHOTOS tab |
+| `js/label-match.js` | Wine label recognition: fingerprints wine photos and camera frames, ranks wines, learns from confirmed scans |
+| `js/label-worker.js` | Runs the image model (DINOv2 small, via transformers.js from jsDelivr) off the main thread |
 | `js/wine-paste.js` | Wine-list parser for "Add many" on the Wines page (producer, wine, vintage, size, style, price) |
 | `js/ui.js` | Escaping, formatting, toasts, form dialog |
 | `js/item-search.js` | `<item-search>`: the search-box picker used wherever a record (wine, recipe…) is chosen from a list. Use it instead of a dropdown for any new picker, and with `allow-new` instead of a `<datalist>` for a text field with suggestions. All searching goes through `matches` / `fold` in `ui.js`, which ignore case and accents |
-| `js/views/*.js` | One module per screen (`wines.js` is the wine list); `prices.js` is the shared price-list entry form |
+| `js/views/*.js` | One module per screen (`wines.js` is the wine list, `stock.js` the wine stock counts); `prices.js` is the shared price-list entry form |
 | `js/icons.js` | Line icons, including one per allergen (`allergenIcon`) |
 | `assets/` | Brand wordmarks, tree-ring pattern, paper and olive textures, home-screen icons |
 
@@ -94,13 +96,13 @@ full-screen forms. It can be added to the home screen and opens like an app.
   as blank, so a table's spare rows aren't mistaken for records. Number columns accept text like
   `£12.50`, `1,250` or `70%`.
 - In a link column you can type the name instead of the ID: a supplier in SUPPLIER_ID, an
-  ingredient or wine in ING_ID, a recipe in RECIPE_ID, a menu in MENU_ID, an ingredient or
+  ingredient or wine in ING_ID, a recipe in RECIPE_ID, a menu in MENU_ID, a stock count in COUNT_ID, an ingredient or
   sub-recipe in a recipe line's ITEM_ID (ITEM_TYPE is filled in if blank). On load the app swaps
   it for that record's ID. Case, accents and punctuation don't matter. A wine can be typed as its
   name, name and vintage, or producer, name and vintage; give the vintage when there are several.
   When several records share a name, the only active one is used. A name that matches nothing,
-  or several records, is left as typed and reported when the app loads. PRICE_HISTORY and PHOTOS
-  are written by the app and aren't matched.
+  or several records, is left as typed and reported when the app loads. PRICE_HISTORY, PHOTOS and
+  LABEL_SCANS are written by the app and aren't matched.
 - Only raw inputs are stored. Costs are computed in the app.
 - Ingredients are generic: name, category, how they're measured (`UNIT`: g / ml / each), yield,
   allergens. Prices live in **SUPPLIER_PRICES**, one row per supplier + ingredient + pack, so an
@@ -175,6 +177,21 @@ full-screen forms. It can be added to the home screen and opens like an app.
   in an empty column adds that serve. The list filters to wines with a glass or bottle only, and
   sorts by style, name, producer, bottle or glass price, or GP.
 
+- A wine stock count (STOCK_COUNTS + STOCK_COUNT_LINES) is under Wines > Stock count. Each counted wine
+  is one line with QTY in bottles; counting it again overwrites the line. Wines not counted are left
+  out (not 0). The count's value is each wine's bottles × its current bottle cost, worked out live.
+  Numbers are saved on the phone first and sent to the sheet in the background, so they survive a
+  dropped signal; finishing a count waits until everything has reached the sheet. A count's STATUS is
+  `open` or `done`; "last count" hints come from the latest finished count on or before its date.
+- "Scan a label" recognises a wine from its label with the phone camera, on the phone itself (no server,
+  works without signal once loaded). The image model (~24 MB) and its runtime (~21 MB) download on first
+  use and stay in the browser's cache. Each wine is matched against its photo, so wines need a photo in
+  PHOTOS to be found; photo fingerprints are cached on each phone (IndexedDB) and redone only when a photo
+  changes. When someone confirms a scanned wine, the label's fingerprint is saved to **LABEL_SCANS** (the
+  newest 6 per wine), which teaches every phone what the real label looks like. Rows there are written by
+  the app; deleting them only makes matching forget those scans. The scanner suggests up to three wines;
+  when it is sure of one for three frames running it opens it (switchable).
+
 ## Roadmap
 
 - **Phase 1 (done):** auth, Sheets wrapper, tab setup, suppliers and ingredients (list, search, add, edit).
@@ -183,4 +200,5 @@ full-screen forms. It can be added to the home screen and opens like an app.
 - **Menus (done):** menu builder with estimated food cost and a combined shopping list.
 - **Wines (done):** wine list with producer, vintage, region, grape and style, bottle cost and cost per glass.
 - **Wine menus (done):** wines by the glass or bottle with sell prices, GP, sorting and a copyable list.
-- **Phase 3:** inventory: stock counts, deliveries, waste.
+- **Wine stock counts (done):** count by label scan, search or list, with stock value at cost.
+- **Phase 3:** inventory: food stock counts, deliveries, waste.

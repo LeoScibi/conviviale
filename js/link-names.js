@@ -16,6 +16,7 @@ const LINKS = {
   RECIPE_LINES: [['RECIPE_ID', 'RECIPES'], ['ITEM_ID', null]],
   MENU_LINES: [['MENU_ID', 'MENUS'], ['RECIPE_ID', 'RECIPES']],
   WINE_MENU_LINES: [['MENU_ID', 'WINE_MENUS'], ['ING_ID', 'WINES']],
+  STOCK_COUNT_LINES: [['COUNT_ID', 'STOCK_COUNTS'], ['ING_ID', 'WINES']],
 };
 
 const LOOKS_LIKE_ID = /^[A-Z]+-\d+$/;

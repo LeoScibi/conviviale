@@ -12,10 +12,11 @@ import * as suppliers from './views/suppliers.js';
 import * as recipes from './views/recipes.js';
 import * as menus from './views/menus.js';
 import * as winemenus from './views/wine-menus.js';
+import * as stock from './views/stock.js';
 
-const ROUTES = { ingredients, wines, suppliers, recipes, menus, winemenus };
+const ROUTES = { ingredients, wines, suppliers, recipes, menus, winemenus, stock };
 // Routes without a tab of their own light up the tab they live under.
-const NAV_FOR = { winemenus: 'menus' };
+const NAV_FOR = { winemenus: 'menus', stock: 'wines' };
 const DEFAULT_ROUTE = 'ingredients';
 
 const $ = sel => document.querySelector(sel);

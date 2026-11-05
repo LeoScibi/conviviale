@@ -15,6 +15,7 @@ import { parseWineList, wineKey } from '../wine-paste.js';
 import { photoFor, savePhoto, savePhotos, fileToPhoto } from '../photos.js';
 import { normName } from '../recipe-paste.js';
 import '../item-search.js';
+import { wineTabs } from './stock.js';
 
 const BOTTLE_UNIT_OPTIONS = [['cl', 'cl'], ['ml', 'ml'], ['L', 'L']];
 const GLASS_ML = 125;
@@ -46,6 +47,7 @@ export function render(el) {
         <button class="btn primary add-desktop" data-add>${icons.plus} Add wine</button>
       </div>
     </div>
+    ${wineTabs('list')}
     <div class="toolbar">
       <label class="search-wrap">${icons.search}
         <input type="search" class="search" data-q value="${esc(state.q)}"
