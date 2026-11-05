@@ -342,11 +342,12 @@ fieldset.field legend { padding: 0; margin-bottom: 8px; }
 .wine-card > .wine-thumb { position: relative; align-self: stretch; width: 60px; height: auto; min-height: 84px; }
 .wine-card > .wine-thumb img { position: absolute; inset: 0; }
 .wine-card-body { display: grid; gap: 8px; min-width: 0; }
-.wine-thumb { display: grid; place-items: center; width: 52px; height: 70px; border-radius: 8px; overflow: hidden; background: var(--cream-soft); color: var(--sage); }
+.wine-thumb { position: relative; display: grid; place-items: center; width: 52px; height: 70px; border-radius: 8px; overflow: hidden; background: var(--cream-soft); color: var(--sage); }
 /* Always show the whole bottle: the photo is scaled to fit, never cropped, on a white frame
    that matches the photos' own backgrounds. */
 .wine-thumb:has(img) { background: #fff; }
-.wine-thumb img { width: 100%; height: 100%; object-fit: contain; object-position: center; display: block; background: #fff; }
+/* Pinned to the frame: as a grid item its 100% height wouldn't hold and a tall photo would spill out. */
+.wine-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: center; display: block; background: #fff; }
 .wine-thumb.lg { width: 96px; height: 128px; border-radius: 10px; flex-shrink: 0; }
 .photo-head { display: grid; grid-template-columns: 96px 1fr; gap: 14px; align-items: start; margin-bottom: 14px; }
 .photo-col { display: grid; gap: 8px; justify-items: stretch; }
