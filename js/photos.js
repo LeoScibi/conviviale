@@ -59,18 +59,63 @@ function loadImage(file) {
   });
 }
 
-/** Shrink a picked or camera image to a JPEG data URL small enough for one sheet cell. */
+/**
+ * The part of the picture worth keeping: shop photos often sit a small bottle in a big plain
+ * (usually white) square. The background is the colour the four corners share; everything
+ * clearly different from it is the subject, and a thin margin is kept around that. A picture
+ * whose corners don't agree (a phone photo in the cellar) is kept whole.
+ */
+function subjectBox(img) {
+  const w = img.naturalWidth;
+  const h = img.naturalHeight;
+  const k = Math.min(1, 240 / Math.max(w, h));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(w * k));
+  c.height = Math.max(1, Math.round(h * k));
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.drawImage(img, 0, 0, c.width, c.height);
+  const d = ctx.getImageData(0, 0, c.width, c.height).data;
+  const px = (x, y) => { const i = (y * c.width + x) * 4; return [d[i], d[i + 1], d[i + 2]]; };
+  const far = (a, b, t) => Math.abs(a[0] - b[0]) > t || Math.abs(a[1] - b[1]) > t || Math.abs(a[2] - b[2]) > t;
+  const corners = [px(1, 1), px(c.width - 2, 1), px(1, c.height - 2), px(c.width - 2, c.height - 2)];
+  const bg = corners[0];
+  const whole = { x: 0, y: 0, w, h };
+  if (corners.some(p => far(p, bg, 12)) || Math.min(...bg) < 200) return whole;
+  let x0 = c.width, y0 = c.height, x1 = -1, y1 = -1;
+  for (let y = 0; y < c.height; y++) {
+    for (let x = 0; x < c.width; x++) {
+      if (!far(px(x, y), bg, 24)) continue;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+  }
+  if (x1 < 0) return whole;
+  const pad = Math.round(0.03 * Math.max(x1 - x0, y1 - y0));
+  x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad);
+  x1 = Math.min(c.width - 1, x1 + pad); y1 = Math.min(c.height - 1, y1 + pad);
+  return { x: x0 / k, y: y0 / k, w: (x1 - x0 + 1) / k, h: (y1 - y0 + 1) / k };
+}
+
+/**
+ * Shrink a picked or camera image to a JPEG data URL small enough for one sheet cell, first
+ * trimming any plain background around the bottle so it fills its frame.
+ */
 export async function fileToPhoto(file) {
   const img = await loadImage(file);
+  const box = subjectBox(img);
   for (let side = MAX_SIDE; side >= 120; side = Math.round(side * 0.8)) {
-    const scale = Math.min(1, side / Math.max(img.naturalWidth, img.naturalHeight));
+    const scale = Math.min(1, side / Math.max(box.w, box.h));
     const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
-    canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+    canvas.width = Math.max(1, Math.round(box.w * scale));
+    canvas.height = Math.max(1, Math.round(box.h * scale));
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#fff'; // transparent PNGs would otherwise turn black as JPEG
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, box.x, box.y, box.w, box.h, 0, 0, canvas.width, canvas.height);
     for (const quality of [0.8, 0.65, 0.5]) {
       const url = canvas.toDataURL('image/jpeg', quality);
       if (url.length <= MAX_CHARS) return url;
