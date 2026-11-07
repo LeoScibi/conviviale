@@ -192,12 +192,23 @@ export async function appendRows(tab, headers, records, idField) {
   if (!records.length) return null;
   const { sheetId, table } = await infoOf(tab);
   const rows = records.map(r => ({ values: headers.map(h => (h && h in r ? cellOf(r[h]) : {})) }));
-  // A table's rows need its tab's sheetId too, or the API looks for sheet 0.
-  const where = table ? { sheetId, tableId: table.tableId } : { sheetId };
-  const res = await request(':batchUpdate', {
-    method: 'POST',
-    body: { requests: [{ appendCells: { ...where, rows, fields: 'userEnteredValue' } }] },
-  });
+  let requests;
+  const r = table?.range;
+  if (r && (r.endRowIndex ?? 1) - (r.startRowIndex ?? 0) <= 1) {
+    // A table with only its header row (say, after its last row was deleted): appending to it
+    // fails with "Internal error encountered", so write the rows under the header and stretch
+    // the table over them instead.
+    const top = r.endRowIndex ?? 1;
+    requests = [
+      { updateCells: { start: { sheetId, rowIndex: top, columnIndex: r.startColumnIndex ?? 0 }, rows, fields: 'userEnteredValue' } },
+      { updateTable: { table: { tableId: table.tableId, range: { ...r, sheetId, endRowIndex: top + rows.length } }, fields: 'range' } },
+    ];
+  } else {
+    // A table's rows need its tab's sheetId too, or the API looks for sheet 0.
+    const where = table ? { sheetId, tableId: table.tableId } : { sheetId };
+    requests = [{ appendCells: { ...where, rows, fields: 'userEnteredValue' } }];
+  }
+  const res = await request(':batchUpdate', { method: 'POST', body: { requests } });
   if (idField) await copyFormulasDown(tab, sheetId, headers, records, idField);
   return res;
 }
