@@ -754,9 +754,9 @@ b.projected { color: #7a5200; }
 .count-name { font-weight: 700; font-size: 18px; line-height: 1.25; }
 .stepper { display: grid; grid-template-columns: 64px minmax(0, 1fr) 64px; gap: 10px; align-items: center; max-width: 360px; margin: 0 auto; }
 .stepper input { height: 72px; text-align: center; font-size: 36px; font-weight: 700; font-variant-numeric: tabular-nums; border-radius: 16px; }
-.step { height: 64px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); font-size: 30px; line-height: 1;
+.stepper .step { height: 64px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); font-size: 30px; line-height: 1;
   color: var(--olive); cursor: pointer; font-family: var(--text); }
-.step:active { background: var(--cream-soft); scale: .96; }
+.stepper .step:active { background: var(--cream-soft); scale: .96; }
 .stepper-unit { text-align: center; color: var(--muted); font-size: 13px; margin-top: 6px; }
 .quick-adds { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 
