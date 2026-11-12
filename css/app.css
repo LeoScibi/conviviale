@@ -210,7 +210,7 @@ input[type=checkbox] { accent-color: var(--olive); width: 20px; height: 20px; mi
 .cards { display: grid; gap: 10px; }
 .card {
   position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 14px 16px; display: grid; gap: 8px; transition: border-color .15s, box-shadow .15s;
+  padding: 14px 16px; display: grid; align-content: start; gap: 8px; transition: border-color .15s, box-shadow .15s;
 }
 .card:hover { border-color: var(--cream); box-shadow: var(--shadow); }
 .card.inactive { opacity: .62; }
