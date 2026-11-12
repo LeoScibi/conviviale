@@ -47,10 +47,12 @@ function findPack(s) {
  * "PUNNET"… mean priced per one of those.
  */
 function bareUnit(col) {
-  const c = col.trim().toLowerCase();
+  // Invoices often print the unit twice in neighbouring columns, which can run together
+  // in the PDF text: "KG KG", "BUNCHBUNCH".
+  const c = col.trim().toLowerCase().replace(/^(.+?)\s*\1$/, '$1');
   if (/^(?:per\s+)?(?:kg|kgs|kilo)$/.test(c)) return { size: 1000, unit: 'g', text: col };
   if (/^(?:per\s+)?(?:l|lt|ltr|litre|liter)$/.test(c)) return { size: 1000, unit: 'ml', text: col };
-  if (/^(?:per\s+)?(?:each|ea|unit|pc|piece|punnet|box|bunch|string|tray|bag|head|jar|tin|bottle)s?$/.test(c)) {
+  if (/^(?:per\s+)?(?:each|ea|unit|pc|piece|punnet|box|bunch|string|tray|bag|head|jar|tin|bottle|pkt|packet)s?$/.test(c)) {
     return { size: 1, unit: 'each', text: col };
   }
   return null;
@@ -81,6 +83,27 @@ function choosePrice(values, pack) {
   return values[0];
 }
 
+const close = (a, b) => Math.abs(a - b) <= Math.max(0.011, Math.abs(b) * 0.01);
+
+/**
+ * An invoice line reads "Qty Price Total": "0.77 7.70 5.93" is 0.77 kg at £7.70, not a
+ * price of £0.77. When two amounts multiply to the last one, that's quantity × unit price;
+ * return the unit price. A whole-number quantity ("6") isn't money-shaped, so `counts`
+ * holds the line's plain integers to try too. `qtyFirst` comes from the header row.
+ */
+function invoicePrice(values, counts, qtyFirst) {
+  if (values.length >= 3) {
+    const total = values[values.length - 1];
+    for (let i = 0; i < values.length - 2; i++) {
+      for (let j = i + 1; j < values.length - 1; j++) {
+        if (values[i] > 0 && values[j] > 0 && close(values[i] * values[j], total)) return qtyFirst ? values[j] : values[i];
+      }
+    }
+  }
+  if (values.length === 2 && values[0] > 0 && counts.some(n => n > 1 && close(n * values[0], values[1]))) return values[0];
+  return null;
+}
+
 function cleanName(s, hadPack) {
   let n = s;
   if (hadPack) n = n.replace(PACKAGING_WORDS, ' ');
@@ -88,7 +111,13 @@ function cleanName(s, hadPack) {
     .replace(/\s+/g, ' ').trim();
 }
 
-function parseLine(raw) {
+/** A size column with nothing else in it ("1KG BAG", "8 x 125g"), as opposed to a name with a size ("BUTTER - 250G"). */
+function purePack(col) {
+  const p = findPack(col);
+  return p && !/[a-z]{3,}/i.test(cleanName(col.replace(p.text, ' '), true)) ? p : null;
+}
+
+function parseLine(raw, qtyFirst = true) {
   if (raw.includes('\t')) {
     const cols = raw.split('\t').map(c => c.trim()).filter(c => c && c !== '£');
     // Any column with money in it is price information ("£42.60/ 12 units box"), never the name.
@@ -101,8 +130,8 @@ function parseLine(raw) {
       priceCols.add(i);
     });
     const free = cols.map((c, i) => i).filter(i => !priceCols.has(i));
-    let packCol = free.find(i => findPack(cols[i]) || bareUnit(cols[i]));
-    let pack = packCol != null ? findPack(cols[packCol]) || bareUnit(cols[packCol]) : null;
+    const packCol = free.find(i => purePack(cols[i]));
+    let pack = packCol != null ? purePack(cols[packCol]) : null;
     if (!pack) {
       // The size can share a column with the price: "1KG BAG 29.93£".
       for (const i of priceCols) {
@@ -112,11 +141,20 @@ function parseLine(raw) {
       }
     }
     const codeCol = free.find(i => i !== packCol && isCode(cols[i]));
-    // The name is the longest remaining column; a size inside it ("Burrata 125g") still counts.
-    let name = free.filter(i => i !== packCol && i !== codeCol).map(i => cols[i])
-      .reduce((best, c) => (c.length > best.length ? c : best), '');
+    const unitCol = free.find(i => bareUnit(cols[i]));
+    // A unit cut short by the column next to it ("BOTT" beside "BOTTLE") is no name either.
+    const clipped = i => cols[i + 1] && bareUnit(cols[i + 1]) && cols[i + 1].toUpperCase().startsWith(cols[i].toUpperCase());
+    // The name is the longest remaining column with words in it; a size inside it ("Burrata 125g") still counts.
+    let name = free.filter(i => i !== packCol && i !== codeCol && !bareUnit(cols[i]) && !clipped(i) && /[a-z]{2}/i.test(cols[i]))
+      .map(i => cols[i]).reduce((best, c) => (c.length > best.length ? c : best), '');
     if (!pack && (pack = findPack(name))) name = name.replace(pack.text, ' ');
-    return { code: codeCol != null ? cols[codeCol] : '', name: cleanName(name, !!pack), pack, price: choosePrice(values, pack) };
+    // Only a bare "KG" / "EACH" column to go on: priced per kilo / per one.
+    if (!pack && unitCol != null) pack = bareUnit(cols[unitCol]);
+    const counts = free.filter(i => i !== codeCol && /^\d+$/.test(cols[i])).map(i => Number(cols[i]));
+    return {
+      code: codeCol != null ? cols[codeCol] : '', name: cleanName(name, !!pack), pack,
+      price: invoicePrice(values, counts, qtyFirst) ?? choosePrice(values, pack),
+    };
   }
 
   let rest = raw;
@@ -130,8 +168,12 @@ function parseLine(raw) {
     code = words[0];
     rest = rest.trim().slice(code.length);
   }
-  return { code, name: cleanName(rest, !!pack), pack, price: choosePrice(money.map(m => m.value), pack) };
+  const values = money.map(m => m.value);
+  return { code, name: cleanName(rest, !!pack), pack, price: invoicePrice(values, [], qtyFirst) ?? choosePrice(values, pack) };
 }
+
+// Invoice footers ("GOODS TOTAL 80.42", "VAT TOTAL 0.00") aren't products.
+const TOTAL_LINE = /^(?:(?:sub|goods|net|vat|grand|invoice)\s*-?\s*)?total\b|^(?:vat|balance|amount due|total due)\b/i;
 
 const HEADER_WORDS = /^(case|price|size|kg\/unit|price in|case size|unit|code|description|product)\b/i;
 
@@ -142,16 +184,20 @@ const HEADER_WORDS = /^(case|price|size|kg\/unit|price in|case size|unit|code|de
 export function parsePriceList(textOrLines) {
   const lines = Array.isArray(textOrLines) ? textOrLines : textOrLines.split(/\r?\n/);
   let section = '';
+  let qtyFirst = true;
   const out = [];
   for (const line of lines.map(l => l.replace(/\u00a0/g, ' ').trim())) {
     if (!line) continue;
+    // An invoice header ("Code Description Qty Price Total") says which comes first.
+    const q = line.search(/\b(?:qty|quantity)\b/i), pr = line.search(/\bprice\b/i);
+    if (q >= 0 && pr >= 0) qtyFirst = q < pr;
     if (!/\d/.test(line)) {
       const first = line.split('\t')[0].trim();
       if (first && !HEADER_WORDS.test(first) && first.split(/\s+/).length <= 5 && first === first.toUpperCase()) section = first;
       continue;
     }
-    const row = { raw: line, section, ...parseLine(line) };
-    if (row.name && /[a-z]/i.test(row.name)) out.push(row);
+    const row = { raw: line, section, ...parseLine(line, qtyFirst) };
+    if (row.name && /[a-z]/i.test(row.name) && !TOTAL_LINE.test(row.name)) out.push(row);
   }
   return out;
 }
